@@ -1,0 +1,8 @@
+import { create } from 'zustand';
+
+export const useStore = create((set) => ({
+    nodes: [],
+    edges: [],
+    // グラフデータを更新する関数
+    updateGraph: (nodes, edges) => set({ nodes, edges }),
+}));
