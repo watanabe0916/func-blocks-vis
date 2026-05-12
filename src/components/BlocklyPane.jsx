@@ -3,7 +3,8 @@ import * as Blockly from 'blockly/core';
 import 'blockly/blocks';
 import * as Ja from 'blockly/msg/ja';
 import { useStore } from '../store';
-import { extractAST, transpileToSSA } from '../compiler/transpiler'; // 追加: トランスパイラの読み込み
+import { transpileToSSA } from '../compiler/transpiler';
+import { extractAST } from '../compiler/extractor'; // 変更: extractorから読み込む
 
 Blockly.setLocale(Ja);
 
@@ -55,8 +56,9 @@ export default function BlocklyPane() {
     }, []);
 
     const handleRun = () => {
-        // 1. 固定のモックではなく、transpiler.js からASTとグラフ・コンソール出力を生成する
-        const ast = extractAST();
+        if (!workspace.current) return;
+        // 1. ワークスペースから動的にASTを抽出する
+        const ast = extractAST(workspace.current);
         const { nodes, edges, consoleOutput } = transpileToSSA(ast);
 
         // 2. Zustand(store) へ3つのデータをすべて渡す

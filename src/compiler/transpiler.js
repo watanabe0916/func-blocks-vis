@@ -1,17 +1,10 @@
-// 手順1: BlocklyからのAST抽出（今回はジェネレータの出力を模した固定のJSON）
-export function extractAST() {
-    return [
-        { type: 'Assign', var: 'x', val: { type: 'Literal', value: 10 } },
-        { type: 'Assign', var: 'y', val: { type: 'Var', name: 'x' } },
-        { type: 'Assign', var: 'x', val: { type: 'Add', left: { type: 'Var', name: 'x' }, right: { type: 'Literal', value: 5 } } },
-        { type: 'Print', val: { type: 'Var', name: 'y' } },
-        { type: 'Print', val: { type: 'Var', name: 'x' } }
-    ];
-}
+/**
+ * SSAグラフの生成と、実行結果（コンソール出力）の算出を行う
+ */
 
-// 手順2: SSAグラフと実行結果の生成
 export function transpileToSSA(ast) {
     let env = {}; // 変数のバージョン管理 { x: 1, y: 1 }
+    let values = {}; // バージョンごとの値を保持 { var_x_1: 10 }
     let nodes = [];
     let edges = [];
     let consoleOutput = [];
@@ -23,56 +16,99 @@ export function transpileToSSA(ast) {
         return env[name];
     };
 
+    /**
+     * 式の評価とグラフノードの生成
+     */
+    const processExpr = (expr, currentY) => {
+        if (!expr) return { id: 'null', value: 0 };
+
+        if (expr.type === 'Literal') {
+            const id = `val_${Math.random().toString(36).substr(2, 9)}`;
+            nodes.push({ 
+                id, 
+                position: { x: 50, y: currentY }, 
+                data: { label: `[値] ${expr.value}` } 
+            });
+            return { id, value: expr.value };
+
+        } else if (expr.type === 'Var') {
+            const ver = getVarVersion(expr.name);
+            const id = `var_${expr.name}_${ver}`;
+            // 最新のバージョンの値を参照
+            return { id, value: values[id] || 0 };
+
+        } else if (['Add', 'Sub', 'Mul', 'Div'].includes(expr.type)) {
+            const left = processExpr(expr.left, currentY - 30);
+            const right = processExpr(expr.right, currentY + 30);
+            
+            const opId = `op_${expr.type.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}`;
+            const labels = { 'Add': '[+] 加算', 'Sub': '[-] 減算', 'Mul': '[*] 乗算', 'Div': '[/] 除算' };
+            
+            nodes.push({ 
+                id: opId, 
+                position: { x: 175, y: currentY }, 
+                data: { label: labels[expr.type] } 
+            });
+
+            edges.push({ id: `e_${left.id}_${opId}`, source: left.id, target: opId, animated: true });
+            edges.push({ id: `e_${right.id}_${opId}`, source: right.id, target: opId, animated: true });
+
+            // 計算の実行
+            let result = 0;
+            const lVal = Number(left.value);
+            const rVal = Number(right.value);
+            if (expr.type === 'Add') result = lVal + rVal;
+            if (expr.type === 'Sub') result = lVal - rVal;
+            if (expr.type === 'Mul') result = lVal * rVal;
+            if (expr.type === 'Div') result = rVal !== 0 ? lVal / rVal : 0;
+
+            return { id: opId, value: result };
+        }
+
+        return { id: 'null', value: 0 };
+    };
+
+    // ASTを一行ずつ走査
     ast.forEach((stmt, index) => {
         if (stmt.type === 'Assign') {
+            // 右辺の評価
+            const res = processExpr(stmt.val, yOffset);
+            
+            // 左辺（変数）の新しいバージョンを作成
             const ver = incrementVarVersion(stmt.var);
             const varId = `var_${stmt.var}_${ver}`;
+
+            // 値を保存
+            values[varId] = res.value;
 
             nodes.push({
                 id: varId,
                 position: { x: 300, y: yOffset },
                 data: { label: `${stmt.var}_${ver}` },
-                style: ver > 1 ? { background: '#ffeb3b' } : {} // シャドウイングされた変数を強調
+                style: ver > 1 ? { background: '#ffeb3b' } : {} // 再代入（シャドウイング）を強調
             });
 
-            if (stmt.val.type === 'Literal') {
-                const valId = `val_${index}`;
-                nodes.push({ id: valId, position: { x: 50, y: yOffset }, data: { label: `[値] ${stmt.val.value}` } });
-                edges.push({ id: `e_${valId}_${varId}`, source: valId, target: varId, animated: true });
-            } else if (stmt.val.type === 'Var') {
-                const srcVer = getVarVersion(stmt.val.name);
-                const srcId = `var_${stmt.val.name}_${srcVer}`;
-                edges.push({ id: `e_${srcId}_${varId}`, source: srcId, target: varId, animated: true });
-            } else if (stmt.val.type === 'Add') {
-                const leftVer = getVarVersion(stmt.val.left.name);
-                const leftId = `var_${stmt.val.left.name}_${leftVer}`;
-                const rightId = `val_add_${index}`;
-                const opId = `op_add_${index}`;
+            // 評価結果から変数ノードへのエッジ
+            edges.push({ id: `e_${res.id}_${varId}`, source: res.id, target: varId, animated: true });
+            yOffset += 140;
 
-                nodes.push({ id: rightId, position: { x: 50, y: yOffset }, data: { label: `[値] ${stmt.val.right.value}` } });
-                nodes.push({ id: opId, position: { x: 175, y: yOffset }, data: { label: '[+] 加算' } });
-
-                edges.push({ id: `e_${leftId}_${opId}`, source: leftId, target: opId, animated: true });
-                edges.push({ id: `e_${rightId}_${opId}`, source: rightId, target: opId, animated: true });
-                edges.push({ id: `e_${opId}_${varId}`, source: opId, target: varId, animated: true });
-            }
-            yOffset += 100;
         } else if (stmt.type === 'Print') {
-            if (stmt.val.type === 'Var') {
-                const srcVer = getVarVersion(stmt.val.name);
-                const srcId = `var_${stmt.val.name}_${srcVer}`;
-                const printId = `print_${index}`;
+            // 出力対象の評価
+            const res = processExpr(stmt.val, yOffset);
+            const printId = `print_${index}`;
 
-                nodes.push({ id: printId, position: { x: 500, y: yOffset - 100 }, data: { label: 'Print()' }, style: { background: '#4caf50', color: '#fff' } });
-                edges.push({ id: `e_${srcId}_${printId}`, source: srcId, target: printId, animated: true });
+            nodes.push({ 
+                id: printId, 
+                position: { x: 500, y: yOffset }, 
+                data: { label: 'Print()' }, 
+                style: { background: '#4caf50', color: '#fff' } 
+            });
 
-                // コンソール出力の評価（簡易的なインタプリタとしての振る舞い）
-                // 実際のAST評価器ではないため、今回は環境の最新の値をシミュレーションする
-                let outputValue = "";
-                if (stmt.val.name === 'y') outputValue = "10";
-                if (stmt.val.name === 'x') outputValue = "15";
-                consoleOutput.push(outputValue);
-            }
+            edges.push({ id: `e_${res.id}_${printId}`, source: res.id, target: printId, animated: true });
+
+            // 仮想コンソールへの出力
+            consoleOutput.push(String(res.value));
+            yOffset += 140;
         }
     });
 
