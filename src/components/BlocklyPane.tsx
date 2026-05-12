@@ -7,10 +7,58 @@ import { extractAST } from '../compiler/extractor.ts';
 
 Blockly.setLocale(Ja as any);
 
+// 標準の算術演算ブロックに剰余 (%) を追加する
+if (Blockly.Blocks['math_arithmetic']) {
+    const originalInit = Blockly.Blocks['math_arithmetic'].init;
+    Blockly.Blocks['math_arithmetic'].init = function(this: Blockly.Block) {
+        originalInit.call(this);
+        const opField = this.getField('OP');
+        if (opField && 'menuGenerator_' in opField) {
+            const options = (opField as any).getOptions(false);
+            if (!options.some((opt: any) => opt[1] === 'MODULO')) {
+                (opField as any).menuGenerator_.push(['%', 'MODULO']);
+            }
+        }
+    };
+}
+
+// 複合代入ブロック
+Blockly.defineBlocksWithJsonArray([{
+    "type": "math_change_ext",
+    "message0": "%1 %2 %3",
+    "args0": [
+        {
+            "type": "field_variable",
+            "name": "VAR",
+            "variable": "x"
+        },
+        {
+            "type": "field_dropdown",
+            "name": "OP",
+            "options": [
+                ["+=", "ADD"],
+                ["-=", "MINUS"],
+                ["*=", "MULTIPLY"],
+                ["/=", "DIVIDE"],
+                ["^=", "POWER"],
+                ["%=", "MODULO"]
+            ]
+        },
+        {
+            "type": "input_value",
+            "name": "DELTA",
+            "check": "Number"
+        }
+    ],
+    "previousStatement": null,
+    "nextStatement": null,
+    "colour": 230,
+    "tooltip": "変数の値を計算して更新します（複合代入）",
+    "helpUrl": ""
+}]);
+
 // @ts-ignore
 Blockly.Msg['VARIABLES_SET'] = '%1 = %2';
-// @ts-ignore
-Blockly.Msg['MATH_CHANGE_TITLE'] = '%1 += %2';
 
 const toolbox = {
     kind: 'categoryToolbox',
@@ -23,11 +71,12 @@ const toolbox = {
         },
         {
             kind: 'category',
-            name: '数学',
+            name: '数学・計算',
             colour: 230,
             contents: [
                 { kind: 'block', type: 'math_number' },
-                { kind: 'block', type: 'math_arithmetic' }
+                { kind: 'block', type: 'math_arithmetic' }, // 標準に戻す
+                { kind: 'block', type: 'math_change_ext' }
             ]
         },
         {

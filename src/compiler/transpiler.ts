@@ -45,7 +45,7 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             // 最新のバージョンの値を参照
             return { id, value: values[id] || 0 };
 
-        } else if (['Add', 'Sub', 'Mul', 'Div', 'Pow'].includes(expr.type)) {
+        } else if (['Add', 'Sub', 'Mul', 'Div', 'Pow', 'Mod'].includes(expr.type)) {
             const left = processExpr(expr.left, currentY - 30);
             const right = processExpr(expr.right, currentY + 30);
             
@@ -55,7 +55,8 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
                 'Sub': '[-] 減算', 
                 'Mul': '[*] 乗算', 
                 'Div': '[/] 除算',
-                'Pow': '[^] 累乗'
+                'Pow': '[^] 累乗',
+                'Mod': '[%] 剰余'
             };
             
             nodes.push({ 
@@ -76,6 +77,7 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             if (expr.type === 'Mul') result = lVal * rVal;
             if (expr.type === 'Div') result = rVal !== 0 ? lVal / rVal : 0;
             if (expr.type === 'Pow') result = Math.pow(lVal, rVal);
+            if (expr.type === 'Mod') result = rVal !== 0 ? lVal % rVal : 0;
 
             return { id: opId, value: result };
         }

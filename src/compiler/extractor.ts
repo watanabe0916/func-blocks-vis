@@ -44,13 +44,24 @@ function blockToAST(block: Blockly.Block): ASTNode | null {
                 val: exprToAST(block.getInputTargetBlock('TEXT'))
             };
 
-        case 'math_change': { // x += 1
+        case 'math_change_ext': { // 新しい複合代入ブロック
             const varName = block.getField('VAR')!.getText();
+            const op = block.getFieldValue('OP');
+            
+            const opMap: Record<string, ArithmeticNode['type']> = {
+                'ADD': 'Add',
+                'MINUS': 'Sub',
+                'MULTIPLY': 'Mul',
+                'DIVIDE': 'Div',
+                'POWER': 'Pow',
+                'MODULO': 'Mod'
+            };
+
             return {
                 type: 'Assign',
                 var: varName,
                 val: {
-                    type: 'Add',
+                    type: opMap[op] || 'Add',
                     left: { type: 'Var', name: varName },
                     right: exprToAST(block.getInputTargetBlock('DELTA'))
                 }
@@ -82,7 +93,8 @@ function exprToAST(block: Blockly.Block | null): ExpressionNode {
                 name: block.getField('VAR')!.getText() 
             };
 
-        case 'math_arithmetic': {
+        case 'math_arithmetic':
+        case 'math_arithmetic_ext': {
             const op = block.getFieldValue('OP') as string;
             const leftBlock = block.getInputTargetBlock('A');
             const rightBlock = block.getInputTargetBlock('B');
@@ -93,7 +105,8 @@ function exprToAST(block: Blockly.Block | null): ExpressionNode {
                 'MINUS': 'Sub',
                 'MULTIPLY': 'Mul',
                 'DIVIDE': 'Div',
-                'POWER': 'Pow'
+                'POWER': 'Pow',
+                'MODULO': 'Mod'
             };
 
             return {
