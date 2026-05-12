@@ -1,7 +1,6 @@
-//import React from 'react';
-import BlocklyPane from './components/BlocklyPane';
-import FlowPane from './components/FlowPane';
-import { useStore } from './store';
+import BlocklyPane from './components/BlocklyPane.tsx';
+import FlowPane from './components/FlowPane.tsx';
+import { useStore } from './store.ts';
 
 export default function App() {
   return (

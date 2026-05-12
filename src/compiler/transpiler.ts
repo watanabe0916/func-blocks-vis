@@ -1,17 +1,25 @@
+import { Node, Edge } from 'reactflow';
+import { ASTNode, ExpressionNode } from './types';
+
+interface TranspileResult {
+    nodes: Node[];
+    edges: Edge[];
+    consoleOutput: string[];
+}
+
 /**
  * SSAグラフの生成と、実行結果（コンソール出力）の算出を行う
  */
-
-export function transpileToSSA(ast) {
-    let env = {}; // 変数のバージョン管理 { x: 1, y: 1 }
-    let values = {}; // バージョンごとの値を保持 { var_x_1: 10 }
-    let nodes = [];
-    let edges = [];
-    let consoleOutput = [];
+export function transpileToSSA(ast: ASTNode[]): TranspileResult {
+    const env: Record<string, number> = {}; // 変数のバージョン管理 { x: 1, y: 1 }
+    const values: Record<string, string | number> = {}; // バージョンごとの値を保持 { var_x_1: 10 }
+    const nodes: Node[] = [];
+    const edges: Edge[] = [];
+    const consoleOutput: string[] = [];
     let yOffset = 50;
 
-    const getVarVersion = (name) => env[name] || 0;
-    const incrementVarVersion = (name) => {
+    const getVarVersion = (name: string) => env[name] || 0;
+    const incrementVarVersion = (name: string) => {
         env[name] = getVarVersion(name) + 1;
         return env[name];
     };
@@ -19,7 +27,7 @@ export function transpileToSSA(ast) {
     /**
      * 式の評価とグラフノードの生成
      */
-    const processExpr = (expr, currentY) => {
+    const processExpr = (expr: ExpressionNode | undefined, currentY: number): { id: string; value: string | number } => {
         if (!expr) return { id: 'null', value: 0 };
 
         if (expr.type === 'Literal') {
@@ -42,7 +50,7 @@ export function transpileToSSA(ast) {
             const right = processExpr(expr.right, currentY + 30);
             
             const opId = `op_${expr.type.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}`;
-            const labels = { 'Add': '[+] 加算', 'Sub': '[-] 減算', 'Mul': '[*] 乗算', 'Div': '[/] 除算' };
+            const labels: Record<string, string> = { 'Add': '[+] 加算', 'Sub': '[-] 減算', 'Mul': '[*] 乗算', 'Div': '[/] 除算' };
             
             nodes.push({ 
                 id: opId, 
@@ -54,7 +62,7 @@ export function transpileToSSA(ast) {
             edges.push({ id: `e_${right.id}_${opId}`, source: right.id, target: opId, animated: true });
 
             // 計算の実行
-            let result = 0;
+            let result: number = 0;
             const lVal = Number(left.value);
             const rVal = Number(right.value);
             if (expr.type === 'Add') result = lVal + rVal;

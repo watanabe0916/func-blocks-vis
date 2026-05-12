@@ -1,7 +1,6 @@
-//import React from 'react';
 import ReactFlow, { Background, Controls } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { useStore } from '../store';
+import { useStore } from '../store.ts';
 
 export default function FlowPane() {
     const { nodes, edges } = useStore();

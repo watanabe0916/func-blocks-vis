@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import * as Blockly from 'blockly'; // 変更: coreからではなく全体を読み込む
+import * as Blockly from 'blockly';
 import * as Ja from 'blockly/msg/ja';
-import { useStore } from '../store';
-import { transpileToSSA } from '../compiler/transpiler';
-import { extractAST } from '../compiler/extractor';
+import { useStore } from '../store.ts';
+import { transpileToSSA } from '../compiler/transpiler.ts';
+import { extractAST } from '../compiler/extractor.ts';
 
-Blockly.setLocale(Ja);
+Blockly.setLocale(Ja as any);
 
+// @ts-ignore
 Blockly.Msg['VARIABLES_SET'] = '%1 = %2';
+// @ts-ignore
 Blockly.Msg['MATH_CHANGE_TITLE'] = '%1 += %2';
 
 const toolbox = {
@@ -40,8 +42,8 @@ const toolbox = {
 };
 
 export default function BlocklyPane() {
-    const blocklyDiv = useRef(null);
-    const workspace = useRef(null);
+    const blocklyDiv = useRef<HTMLDivElement>(null);
+    const workspace = useRef<Blockly.WorkspaceSvg | null>(null);
     const updateGraph = useStore((state) => state.updateGraph);
     const { saveLayout, deleteLayout, savedLayouts } = useStore();
     const [selectedLayout, setSelectedLayout] = useState('');
