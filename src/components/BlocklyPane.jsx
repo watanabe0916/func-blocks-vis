@@ -1,10 +1,9 @@
-import { useEffect, useRef } from 'react';
-import * as Blockly from 'blockly/core';
-import 'blockly/blocks';
+import { useEffect, useRef, useState } from 'react';
+import * as Blockly from 'blockly'; // 変更: coreからではなく全体を読み込む
 import * as Ja from 'blockly/msg/ja';
 import { useStore } from '../store';
 import { transpileToSSA } from '../compiler/transpiler';
-import { extractAST } from '../compiler/extractor'; // 変更: extractorから読み込む
+import { extractAST } from '../compiler/extractor';
 
 Blockly.setLocale(Ja);
 
@@ -44,6 +43,8 @@ export default function BlocklyPane() {
     const blocklyDiv = useRef(null);
     const workspace = useRef(null);
     const updateGraph = useStore((state) => state.updateGraph);
+    const { saveLayout, deleteLayout, savedLayouts } = useStore();
+    const [selectedLayout, setSelectedLayout] = useState('');
 
     useEffect(() => {
         if (!workspace.current && blocklyDiv.current) {
@@ -65,12 +66,80 @@ export default function BlocklyPane() {
         updateGraph(nodes, edges, consoleOutput);
     };
 
+    const handleSave = () => {
+        if (!workspace.current) return;
+        const name = window.prompt('保存する名前を入力してください:');
+        if (!name) return;
+
+        // 現在のワークスペースの状態をJSON形式（推奨）で保存
+        const state = Blockly.serialization.workspaces.save(workspace.current);
+        const stateText = JSON.stringify(state);
+        saveLayout(name, stateText);
+        setSelectedLayout(name);
+        alert(`「${name}」として保存しました。`);
+    };
+
+    const handleRestore = () => {
+        if (!workspace.current || !selectedLayout || !savedLayouts[selectedLayout]) {
+            alert('復元するレイアウトを選択してください。');
+            return;
+        }
+
+        try {
+            const stateText = savedLayouts[selectedLayout];
+            const state = JSON.parse(stateText);
+            workspace.current.clear();
+            Blockly.serialization.workspaces.load(state, workspace.current);
+        } catch (e) {
+            console.error('復元エラー:', e);
+            alert('復元に失敗しました。データ形式が古い可能性があります。');
+        }
+    };
+
+    const handleDelete = () => {
+        if (!selectedLayout || !savedLayouts[selectedLayout]) {
+            alert('削除するレイアウトを選択してください。');
+            return;
+        }
+
+        if (window.confirm(`「${selectedLayout}」を削除してもよろしいですか？`)) {
+            deleteLayout(selectedLayout);
+            setSelectedLayout('');
+            alert('削除しました。');
+        }
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ padding: '10px', borderBottom: '1px solid #ccc', backgroundColor: '#f9f9f9' }}>
-                <button onClick={handleRun} style={{ padding: '8px 16px', cursor: 'pointer' }}>
+            <div style={{ padding: '10px', borderBottom: '1px solid #ccc', backgroundColor: '#f9f9f9', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={handleRun} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#4caf50', color: 'white', border: 'none', borderRadius: '4px' }}>
                     関数型に変換して実行
                 </button>
+                
+                <div style={{ borderLeft: '1px solid #ccc', height: '24px', margin: '0 5px' }} />
+
+                <button onClick={handleSave} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>
+                    保存
+                </button>
+
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                    <select 
+                        value={selectedLayout} 
+                        onChange={(e) => setSelectedLayout(e.target.value)}
+                        style={{ padding: '7px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '120px' }}
+                    >
+                        <option value="">-- レイアウトを選択 --</option>
+                        {Object.keys(savedLayouts).map(name => (
+                            <option key={name} value={name}>{name}</option>
+                        ))}
+                    </select>
+                    <button onClick={handleRestore} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#ff9800', color: 'white', border: 'none', borderRadius: '4px' }}>
+                        復元
+                    </button>
+                    <button onClick={handleDelete} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px' }}>
+                        削除
+                    </button>
+                </div>
             </div>
             <div ref={blocklyDiv} style={{ flex: 1, width: '100%' }} />
         </div>
