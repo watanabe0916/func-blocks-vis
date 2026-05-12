@@ -92,7 +92,8 @@ function exprToAST(block: Blockly.Block | null): ExpressionNode {
                 'ADD': 'Add',
                 'MINUS': 'Sub',
                 'MULTIPLY': 'Mul',
-                'DIVIDE': 'Div'
+                'DIVIDE': 'Div',
+                'POWER': 'Pow'
             };
 
             return {

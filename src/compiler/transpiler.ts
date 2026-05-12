@@ -45,12 +45,18 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             // 最新のバージョンの値を参照
             return { id, value: values[id] || 0 };
 
-        } else if (['Add', 'Sub', 'Mul', 'Div'].includes(expr.type)) {
+        } else if (['Add', 'Sub', 'Mul', 'Div', 'Pow'].includes(expr.type)) {
             const left = processExpr(expr.left, currentY - 30);
             const right = processExpr(expr.right, currentY + 30);
             
             const opId = `op_${expr.type.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}`;
-            const labels: Record<string, string> = { 'Add': '[+] 加算', 'Sub': '[-] 減算', 'Mul': '[*] 乗算', 'Div': '[/] 除算' };
+            const labels: Record<string, string> = { 
+                'Add': '[+] 加算', 
+                'Sub': '[-] 減算', 
+                'Mul': '[*] 乗算', 
+                'Div': '[/] 除算',
+                'Pow': '[^] 累乗'
+            };
             
             nodes.push({ 
                 id: opId, 
@@ -69,12 +75,15 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             if (expr.type === 'Sub') result = lVal - rVal;
             if (expr.type === 'Mul') result = lVal * rVal;
             if (expr.type === 'Div') result = rVal !== 0 ? lVal / rVal : 0;
+            if (expr.type === 'Pow') result = Math.pow(lVal, rVal);
 
             return { id: opId, value: result };
         }
 
         return { id: 'null', value: 0 };
     };
+
+    const varLatestNodeId: Record<string, string> = {}; // 各変数の最新ノードIDを記録
 
     // ASTを一行ずつ走査
     ast.forEach((stmt, index) => {
@@ -89,12 +98,23 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             // 値を保存
             values[varId] = res.value;
 
+            // 以前のバージョンがあれば、その強調（黄色）を解除する
+            if (varLatestNodeId[stmt.var]) {
+                const prevNodeId = varLatestNodeId[stmt.var];
+                const prevNode = nodes.find(n => n.id === prevNodeId);
+                if (prevNode) {
+                    prevNode.style = { ...prevNode.style, background: undefined };
+                }
+            }
+
+            // 新しいノードを黄色で作成し、最新IDを更新
             nodes.push({
                 id: varId,
                 position: { x: 300, y: yOffset },
                 data: { label: `${stmt.var}_${ver}` },
-                style: ver > 1 ? { background: '#ffeb3b' } : {} // 再代入（シャドウイング）を強調
+                style: { background: '#ffeb3b' } // 常に最初は強調
             });
+            varLatestNodeId[stmt.var] = varId;
 
             // 評価結果から変数ノードへのエッジ
             edges.push({ id: `e_${res.id}_${varId}`, source: res.id, target: varId, animated: true });

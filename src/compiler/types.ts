@@ -27,7 +27,7 @@ export type VarNode = {
 };
 
 export type ArithmeticNode = {
-    type: 'Add' | 'Sub' | 'Mul' | 'Div';
+    type: 'Add' | 'Sub' | 'Mul' | 'Div' | 'Pow';
     left: ExpressionNode;
     right: ExpressionNode;
 };
