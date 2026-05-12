@@ -5,5 +5,6 @@ export const useStore = create((set) => ({
     edges: [],
     consoleOutput: [],
     // グラフデータを更新する関数
-    updateGraph: (nodes, edges) => set({ nodes, edges }),
+    updateGraph: (nodes, edges, consoleOutput) => set({ nodes, edges,
+        consoleOutput }),
 }));

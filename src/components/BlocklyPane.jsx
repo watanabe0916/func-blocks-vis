@@ -1,16 +1,15 @@
 import { useEffect, useRef } from 'react';
 import * as Blockly from 'blockly/core';
-import 'blockly/blocks'; // 標準ブロックの読み込み
-import * as Ja from 'blockly/msg/ja'; // 日本語化パッケージ
+import 'blockly/blocks';
+import * as Ja from 'blockly/msg/ja';
 import { useStore } from '../store';
+import { extractAST, transpileToSSA } from '../compiler/transpiler'; // 追加: トランスパイラの読み込み
 
-// Blocklyの表示言語を日本語に設定
 Blockly.setLocale(Ja);
 
 Blockly.Msg['VARIABLES_SET'] = '%1 = %2';
 Blockly.Msg['MATH_CHANGE_TITLE'] = '%1 += %2';
 
-// 左側に表示するブロックのメニュー（ツールボックス）の定義
 const toolbox = {
     kind: 'categoryToolbox',
     contents: [
@@ -18,7 +17,7 @@ const toolbox = {
             kind: 'category',
             name: '変数',
             colour: 330,
-            custom: 'VARIABLE' // 変数の作成・取得・代入ブロックを自動生成
+            custom: 'VARIABLE'
         },
         {
             kind: 'category',
@@ -46,7 +45,6 @@ export default function BlocklyPane() {
     const updateGraph = useStore((state) => state.updateGraph);
 
     useEffect(() => {
-        // React 18のStrictModeによる二重描画を防ぐためのチェック
         if (!workspace.current && blocklyDiv.current) {
             workspace.current = Blockly.inject(blocklyDiv.current, {
                 toolbox: toolbox,
@@ -57,38 +55,21 @@ export default function BlocklyPane() {
     }, []);
 
     const handleRun = () => {
-        // 【モック】 現状はまだ変換器(トランスパイラ)が未実装のため、
-        // 前回の「x=10, y=x, x=x+5」の固定DAGグラフを出力する
-        const initialNodes = [
-            { id: 'val_1', position: { x: 50, y: 50 }, data: { label: '[値] 10' } },
-            { id: 'var_x_1', position: { x: 200, y: 50 }, data: { label: 'x_1' } },
-            { id: 'var_y_1', position: { x: 350, y: 50 }, data: { label: 'y_1' } },
-            { id: 'val_2', position: { x: 50, y: 150 }, data: { label: '[値] 5' } },
-            { id: 'op_add', position: { x: 200, y: 150 }, data: { label: '[+] 加算' } },
-            { id: 'var_x_2', position: { x: 350, y: 150 }, data: { label: 'x_2 (新規生成)' }, style: { background: '#ffeb3b' } },
-        ];
+        // 1. 固定のモックではなく、transpiler.js からASTとグラフ・コンソール出力を生成する
+        const ast = extractAST();
+        const { nodes, edges, consoleOutput } = transpileToSSA(ast);
 
-        const initialEdges = [
-            { id: 'e1', source: 'val_1', target: 'var_x_1', animated: true },
-            { id: 'e2', source: 'var_x_1', target: 'var_y_1', animated: true },
-            { id: 'e3', source: 'val_2', target: 'op_add', animated: true },
-            { id: 'e4', source: 'var_x_1', target: 'op_add', animated: true },
-            { id: 'e5', source: 'op_add', target: 'var_x_2', animated: true },
-        ];
-
-        updateGraph(initialNodes, initialEdges);
+        // 2. Zustand(store) へ3つのデータをすべて渡す
+        updateGraph(nodes, edges, consoleOutput);
     };
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* 上部コントロールパネル */}
             <div style={{ padding: '10px', borderBottom: '1px solid #ccc', backgroundColor: '#f9f9f9' }}>
                 <button onClick={handleRun} style={{ padding: '8px 16px', cursor: 'pointer' }}>
-                    関数型に変換して実行 (現在はモック)
+                    関数型に変換して実行
                 </button>
             </div>
-
-            {/* Blockly描画領域 */}
             <div ref={blocklyDiv} style={{ flex: 1, width: '100%' }} />
         </div>
     );
