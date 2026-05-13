@@ -111,9 +111,14 @@ export default function BlocklyPane() {
         if (!workspace.current) return;
         // 1. ワークスペースから動的にASTを抽出する
         const ast = extractAST(workspace.current);
-        const { nodes, edges, consoleOutput } = transpileToSSA(ast);
+        console.log('--- Extracted AST ---', ast);
 
-        // 2. Zustand(store) へ3つのデータをすべて渡す
+        // 2. SSAグラフと実行結果を生成する
+        const result = transpileToSSA(ast);
+        console.log('--- Transpilation Result (SSA Graph & Output) ---', result);
+
+        // 3. Zustand(store) へデータを渡す
+        const { nodes, edges, consoleOutput } = result;
         updateGraph(nodes, edges, consoleOutput);
     };
 
