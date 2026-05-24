@@ -14,11 +14,12 @@ export type PrintNode = {
 export type ExpressionNode = 
     | LiteralNode 
     | VarNode 
-    | ArithmeticNode;
+    | ArithmeticNode
+    | ApplyNode;
 
 export type LiteralNode = {
     type: 'Literal';
-    value: number | string;
+    value: number | string | boolean;
 };
 
 export type VarNode = {
@@ -31,3 +32,10 @@ export type ArithmeticNode = {
     left: ExpressionNode;
     right: ExpressionNode;
 };
+
+export type ApplyNode = {
+    type: 'Apply';
+    op: 'LessThan' | 'GreaterThan' | 'Equal' | 'NotEqual' | 'LessThanOrEqual' | 'GreaterThanOrEqual' | 'And' | 'Or' | 'Not';
+    args: ExpressionNode[];
+};
+

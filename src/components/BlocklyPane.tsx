@@ -23,7 +23,8 @@ if (Blockly.Blocks['math_arithmetic']) {
 }
 
 // 複合代入ブロック
-Blockly.defineBlocksWithJsonArray([{
+Blockly.defineBlocksWithJsonArray([
+  {
     "type": "math_change_ext",
     "message0": "%1 %2 %3",
     "args0": [
@@ -55,7 +56,151 @@ Blockly.defineBlocksWithJsonArray([{
     "colour": 230,
     "tooltip": "変数の値を計算して更新します（複合代入）",
     "helpUrl": ""
-}]);
+  },
+  // logic_boolean_ext
+  {
+    "type": "logic_boolean_ext",
+    "message0": "%1",
+    "args0": [
+        {
+            "type": "field_dropdown",
+            "name": "BOOL",
+            "options": [
+                ["true", "TRUE"],
+                ["false", "FALSE"]
+            ]
+        }
+    ],
+    "output": "Boolean",
+    "colour": 280,
+    "tooltip": "真偽値リテラル（true または false）を返します。",
+    "helpUrl": ""
+  },
+  // logic_compare_ext
+  {
+    "type": "logic_compare_ext",
+    "message0": "%1 %2 %3",
+    "args0": [
+        {
+            "type": "input_value",
+            "name": "A",
+            "check": ["Number", "String"]
+        },
+        {
+            "type": "field_dropdown",
+            "name": "OP",
+            "options": [
+                ["=", "EQ"],
+                ["\u2260", "NEQ"],
+                ["<", "LT"],
+                ["\u2264", "LTE"],
+                [">", "GT"],
+                ["\u2265", "GTE"]
+            ]
+        },
+        {
+            "type": "input_value",
+            "name": "B",
+            "check": ["Number", "String"]
+        }
+    ],
+    "output": "Boolean",
+    "inputsInline": true,
+    "colour": 280,
+    "tooltip": "2つの値（数値または文字列）を比較します。",
+    "helpUrl": ""
+  },
+  // logic_operation_ext
+  {
+    "type": "logic_operation_ext",
+    "message0": "%1 %2 %3",
+    "args0": [
+        {
+            "type": "input_value",
+            "name": "A",
+            "check": "Boolean"
+        },
+        {
+            "type": "field_dropdown",
+            "name": "OP",
+            "options": [
+                ["AND", "AND"],
+                ["OR", "OR"]
+            ]
+        },
+        {
+            "type": "input_value",
+            "name": "B",
+            "check": "Boolean"
+        }
+    ],
+    "output": "Boolean",
+    "inputsInline": true,
+    "colour": 280,
+    "tooltip": "論理積(AND)または論理和(OR)を計算します。",
+    "helpUrl": ""
+  },
+  // logic_negate_ext
+  {
+    "type": "logic_negate_ext",
+    "message0": "NOT %1",
+    "args0": [
+        {
+            "type": "input_value",
+            "name": "BOOL",
+            "check": "Boolean"
+        }
+    ],
+    "output": "Boolean",
+    "colour": 280,
+    "tooltip": "真偽値を反転させます。",
+    "helpUrl": ""
+  }
+]);
+
+// 比較ブロックの型一致バリデーションフック
+if (Blockly.Blocks['logic_compare_ext']) {
+    Blockly.Blocks['logic_compare_ext'].onchange = function(this: Blockly.Block, e: any) {
+        if (!this.workspace || (this.workspace as any).isDragging()) return;
+        const inputA = this.getInput('A');
+        const inputB = this.getInput('B');
+        if (!inputA || !inputB) return;
+        const connA = inputA.connection;
+        const connB = inputB.connection;
+        if (!connA || !connB) return;
+
+        const targetA = connA.targetBlock();
+        const targetB = connB.targetBlock();
+
+        if (targetA && targetB) {
+            const checkA = targetA.outputConnection?.getCheck();
+            const checkB = targetB.outputConnection?.getCheck();
+
+            if (checkA && checkB) {
+                const arrA = Array.isArray(checkA) ? checkA : [checkA];
+                const arrB = Array.isArray(checkB) ? checkB : [checkB];
+                const hasIntersection = arrA.some(t => arrB.includes(t));
+
+                if (!hasIntersection) {
+                    this.setWarningText('型エラー：左右の入力ポートの型（数値/文字列）が一致していません！');
+                    if (e && e.type === Blockly.Events.BLOCK_MOVE) {
+                        if (e.blockId === targetB.id) {
+                            targetB.outputConnection?.disconnect();
+                        } else if (e.blockId === targetA.id) {
+                            targetA.outputConnection?.disconnect();
+                        }
+                    }
+                } else {
+                    this.setWarningText(null);
+                }
+            } else {
+                this.setWarningText(null);
+            }
+        } else {
+            this.setWarningText(null);
+        }
+    };
+}
 
 // @ts-ignore
 Blockly.Msg['VARIABLES_SET'] = '%1 = %2';
@@ -75,8 +220,19 @@ const toolbox = {
             colour: 230,
             contents: [
                 { kind: 'block', type: 'math_number' },
-                { kind: 'block', type: 'math_arithmetic' }, // 標準に戻す
+                { kind: 'block', type: 'math_arithmetic' },
                 { kind: 'block', type: 'math_change_ext' }
+            ]
+        },
+        {
+            kind: 'category',
+            name: '論理・比較',
+            colour: 280,
+            contents: [
+                { kind: 'block', type: 'logic_boolean_ext' },
+                { kind: 'block', type: 'logic_compare_ext' },
+                { kind: 'block', type: 'logic_operation_ext' },
+                { kind: 'block', type: 'logic_negate_ext' }
             ]
         },
         {

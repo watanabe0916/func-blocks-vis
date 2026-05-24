@@ -8,6 +8,7 @@ interface AppState {
     consoleOutput: string[];
     savedLayouts: Record<string, string>;
     updateGraph: (nodes: Node[], edges: Edge[], consoleOutput: string[]) => void;
+    toggleNodeFold: (nodeId: string) => void;
     saveLayout: (name: string, stateText: string) => void;
     deleteLayout: (name: string) => void;
 }
@@ -21,6 +22,14 @@ export const useStore = create<AppState>()(
             savedLayouts: {},
             // グラフデータを更新する関数
             updateGraph: (nodes, edges, consoleOutput) => set({ nodes, edges, consoleOutput }),
+            // ノードの折りたたみ・展開状態をトグルする
+            toggleNodeFold: (nodeId) => set((state) => ({
+                nodes: state.nodes.map(node => 
+                    node.id === nodeId 
+                        ? { ...node, data: { ...node.data, folded: !node.data.folded } } 
+                        : node
+                )
+            })),
             // レイアウトを保存
             saveLayout: (name, stateText) => set((state) => ({
                 savedLayouts: { ...state.savedLayouts, [name]: stateText }
