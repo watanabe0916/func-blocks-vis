@@ -1,9 +1,10 @@
+import React from 'react';
 import ReactFlow, { Background, Controls, Handle, Position } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore } from '../store.ts';
 
 // --- Custom Value Node Component ---
-const ValNode = ({ data, style }: any) => {
+const ValNode = ({ data, style, selected }: any) => {
     const isBool = typeof data.value === 'boolean';
     const val = data.value;
     
@@ -39,11 +40,11 @@ const ValNode = ({ data, style }: any) => {
             borderRadius: '4px',
             background: bg,
             color: color,
-            border: `1.5px solid ${borderColor}`,
+            border: `1.5px solid ${selected ? '#ff5722' : borderColor}`,
             fontSize: '11px',
             fontWeight: 'bold',
             fontFamily: 'Inter, sans-serif',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+            boxShadow: selected ? '0 0 8px rgba(255, 87, 34, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
             width: 'max-content',
             whiteSpace: 'nowrap',
             textAlign: 'center',
@@ -51,7 +52,8 @@ const ValNode = ({ data, style }: any) => {
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            minHeight: '20px'
+            minHeight: '20px',
+            transition: 'border-color 0.2s, box-shadow 0.2s'
         }}>
             {/* 左側に入力用のターゲットハンドル（代入時にエッジが接続される） */}
             <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
@@ -77,7 +79,7 @@ const ValNode = ({ data, style }: any) => {
 };
 
 // --- Custom Operator Node Component ---
-const OpNode = ({ id, data }: any) => {
+const OpNode = ({ id, data, selected }: any) => {
     const toggleFold = useStore((state) => state.toggleNodeFold);
     const folded = data.folded;
     const isBoolResult = typeof data.result === 'boolean';
@@ -158,14 +160,14 @@ const OpNode = ({ id, data }: any) => {
     return (
         <div style={{
             borderRadius: '6px',
-            border: `1.5px solid ${borderColor}`,
+            border: `1.5px solid ${selected ? '#ff5722' : borderColor}`,
             background: '#ffffff',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
+            boxShadow: selected ? '0 0 8px rgba(255, 87, 34, 0.5)' : '0 2px 4px rgba(0,0,0,0.06)',
             fontSize: '11px',
             fontFamily: 'Inter, sans-serif',
             width: 'max-content',
             overflow: 'hidden',
-            transition: 'all 0.2s ease-in-out',
+            transition: 'border-color 0.2s, box-shadow 0.2s, all 0.2s ease-in-out',
             position: 'relative',
             display: 'flex',
             flexDirection: 'column'
@@ -336,18 +338,18 @@ const OpNode = ({ id, data }: any) => {
 };
 
 // --- Custom Print Node Component ---
-const PrintNode = ({ data }: any) => {
+const PrintNode = ({ data, selected }: any) => {
     return (
         <div style={{
             padding: '2px 8px',
             borderRadius: '4px',
             background: '#4caf50',
             color: '#ffffff',
-            border: '1.5px solid #2e7d32',
+            border: `1.5px solid ${selected ? '#ff5722' : '#2e7d32'}`,
             fontSize: '11px',
             fontWeight: 'bold',
             fontFamily: 'Inter, sans-serif',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+            boxShadow: selected ? '0 0 8px rgba(255, 87, 34, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
             width: 'max-content',
             whiteSpace: 'nowrap',
             textAlign: 'center',
@@ -355,7 +357,8 @@ const PrintNode = ({ data }: any) => {
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            minHeight: '20px'
+            minHeight: '20px',
+            transition: 'border-color 0.2s, box-shadow 0.2s'
         }}>
             <Handle type="target" position={Position.Left} style={{ background: '#2e7d32' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -374,7 +377,7 @@ const nodeTypes = {
 };
 
 export default function FlowPane() {
-    const { nodes, edges } = useStore();
+    const { nodes, edges, onNodesChange, onEdgesChange } = useStore();
 
     // 折りたたまれている演算子ノードのIDセットを作成
     const foldedOpIds = new Set(
@@ -397,12 +400,50 @@ export default function FlowPane() {
         return visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target);
     });
 
+    // 選択されているノードのIDを取得
+    const selectedNode = visibleNodes.find(n => n.selected);
+    const selectedNodeId = selectedNode ? selectedNode.id : null;
+
+    // 選択されたノードと接続されているエッジをハイライトする
+    const visibleEdgesWithHighlight = visibleEdges.map(edge => {
+        const isConnected = selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId);
+        
+        if (selectedNodeId) {
+            if (isConnected) {
+                return {
+                    ...edge,
+                    animated: true,
+                    style: {
+                        ...edge.style,
+                        stroke: '#ff5722', // 鮮やかなオレンジ
+                        strokeWidth: 3,
+                        transition: 'stroke 0.2s, stroke-width 0.2s'
+                    }
+                };
+            } else {
+                return {
+                    ...edge,
+                    animated: false,
+                    style: {
+                        ...edge.style,
+                        stroke: '#eceff1', // 薄いグレーに減衰
+                        opacity: 0.3,
+                        transition: 'stroke 0.2s, opacity 0.2s'
+                    }
+                };
+            }
+        }
+        return edge;
+    });
+
     return (
         <div style={{ width: '100%', height: '100%' }}>
             <ReactFlow 
                 nodes={visibleNodes} 
-                edges={visibleEdges} 
+                edges={visibleEdgesWithHighlight} 
                 nodeTypes={nodeTypes}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
                 fitView
             >
                 <Background />

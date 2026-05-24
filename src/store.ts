@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Node, Edge } from 'reactflow';
+import { Node, Edge, OnNodesChange, OnEdgesChange, applyNodeChanges, applyEdgeChanges } from 'reactflow';
 
 interface AppState {
     nodes: Node[];
@@ -8,6 +8,8 @@ interface AppState {
     consoleOutput: string[];
     savedLayouts: Record<string, string>;
     updateGraph: (nodes: Node[], edges: Edge[], consoleOutput: string[]) => void;
+    onNodesChange: OnNodesChange;
+    onEdgesChange: OnEdgesChange;
     toggleNodeFold: (nodeId: string) => void;
     saveLayout: (name: string, stateText: string) => void;
     deleteLayout: (name: string) => void;
@@ -22,6 +24,12 @@ export const useStore = create<AppState>()(
             savedLayouts: {},
             // グラフデータを更新する関数
             updateGraph: (nodes, edges, consoleOutput) => set({ nodes, edges, consoleOutput }),
+            onNodesChange: (changes) => set((state) => ({
+                nodes: applyNodeChanges(changes, state.nodes),
+            })),
+            onEdgesChange: (changes) => set((state) => ({
+                edges: applyEdgeChanges(changes, state.edges),
+            })),
             // ノードの折りたたみ・展開状態をトグルする
             toggleNodeFold: (nodeId) => set((state) => ({
                 nodes: state.nodes.map(node => 
