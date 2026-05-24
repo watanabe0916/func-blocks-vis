@@ -57,9 +57,14 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
     };
 
     /**
-     * 式の評価とグラフノードの生成
+     * 式の評価とグラフノードの生成 (X, Y 座標を階層的に計算する)
      */
-    const processExpr = (expr: ExpressionNode | undefined, currentY: number): { id: string; value: string | number | boolean } => {
+    const processExpr = (
+        expr: ExpressionNode | undefined, 
+        currentX: number, 
+        currentY: number, 
+        ySpan: number
+    ): { id: string; value: string | number | boolean } => {
         if (!expr) return { id: 'null', value: 0 };
 
         if (expr.type === 'Literal') {
@@ -67,7 +72,7 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             nodes.push({ 
                 id, 
                 type: 'valNode',
-                position: { x: 50, y: currentY }, 
+                position: { x: currentX, y: currentY }, 
                 data: { 
                     label: `${expr.value}`,
                     value: expr.value,
@@ -83,8 +88,8 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             return { id, value: values[id] !== undefined ? values[id] : 0 };
 
         } else if (expr.type === 'Add' || expr.type === 'Sub' || expr.type === 'Mul' || expr.type === 'Div' || expr.type === 'Pow' || expr.type === 'Mod') {
-            const left = processExpr(expr.left, currentY - 35);
-            const right = processExpr(expr.right, currentY + 35);
+            const left = processExpr(expr.left, currentX - 120, currentY - ySpan / 2, ySpan / 2);
+            const right = processExpr(expr.right, currentX - 120, currentY + ySpan / 2, ySpan / 2);
             
             const opId = `op_${expr.type.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}`;
             const labels: Record<string, string> = { 
@@ -110,7 +115,7 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             nodes.push({ 
                 id: opId, 
                 type: 'opNode',
-                position: { x: 175, y: currentY }, 
+                position: { x: currentX, y: currentY }, 
                 data: { 
                     label: labels[expr.type] || expr.type,
                     op: expr.type,
@@ -140,17 +145,17 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             const rightExpr = expr.args[1];
 
             if (op === 'Not') {
-                leftRes = processExpr(leftExpr, currentY);
+                leftRes = processExpr(leftExpr, currentX - 120, currentY, ySpan);
                 result = !leftRes.value;
             } else if (op === 'And' || op === 'Or') {
-                leftRes = processExpr(leftExpr, currentY - 45);
+                leftRes = processExpr(leftExpr, currentX - 120, currentY - ySpan / 2, ySpan / 2);
                 const lVal = !!leftRes.value;
                 if (op === 'And') {
                     if (lVal === false) {
                         result = false;
                         shortCircuited = true;
                     } else {
-                        rightRes = processExpr(rightExpr, currentY + 45);
+                        rightRes = processExpr(rightExpr, currentX - 120, currentY + ySpan / 2, ySpan / 2);
                         result = lVal && !!rightRes.value;
                     }
                 } else { // Or
@@ -158,14 +163,14 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
                         result = true;
                         shortCircuited = true;
                     } else {
-                        rightRes = processExpr(rightExpr, currentY + 45);
+                        rightRes = processExpr(rightExpr, currentX - 120, currentY + ySpan / 2, ySpan / 2);
                         result = lVal || !!rightRes.value;
                     }
                 }
             } else {
                 // Comparison operators
-                leftRes = processExpr(leftExpr, currentY - 45);
-                rightRes = processExpr(rightExpr, currentY + 45);
+                leftRes = processExpr(leftExpr, currentX - 120, currentY - ySpan / 2, ySpan / 2);
+                rightRes = processExpr(rightExpr, currentX - 120, currentY + ySpan / 2, ySpan / 2);
                 const lVal = leftRes.value;
                 const rVal = rightRes.value;
 
@@ -188,7 +193,7 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             nodes.push({
                 id: opId,
                 type: 'opNode',
-                position: { x: 175, y: currentY },
+                position: { x: currentX, y: currentY },
                 data: {
                     op,
                     label: getOpLabel(op, embeddedLeft, embeddedRight),
@@ -226,8 +231,8 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
     // ASTを一行ずつ走査
     ast.forEach((stmt, index) => {
         if (stmt.type === 'Assign') {
-            // 右辺の評価
-            const res = processExpr(stmt.val, yOffset);
+            // 右辺の評価（階層構造の起点座標: x: 300, ySpan: 160）
+            const res = processExpr(stmt.val, 300, yOffset, 160);
             
             // 左辺（変数）の新しいバージョンを作成
             const ver = incrementVarVersion(stmt.var);
@@ -245,11 +250,11 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
                 }
             }
 
-            // 新しいノードを黄色で作成し、最新IDを更新
+            // 新しいノードを黄色で作成し、最新IDを更新 (変数は右端の x: 450 に配置)
             nodes.push({
                 id: varId,
                 type: 'valNode',
-                position: { x: 300, y: yOffset },
+                position: { x: 450, y: yOffset },
                 data: { 
                     label: `${stmt.var}_${ver}`,
                     value: res.value,
@@ -263,25 +268,29 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
 
             // 評価結果から変数ノードへのエッジ
             edges.push({ id: `e_${res.id}_${varId}`, source: res.id, target: varId, animated: true });
-            yOffset += 140;
+            yOffset += 160; // 縦の重なりを避けるためオフセットを少し広げる
 
         } else if (stmt.type === 'Print') {
-            // 出力対象の評価
-            const res = processExpr(stmt.val, yOffset);
+            // 出力対象の評価（階層構造の起点座標: x: 420, ySpan: 160）
+            const res = processExpr(stmt.val, 420, yOffset, 160);
             const printId = `print_${index}`;
 
+            // Printノードはさらに右端の x: 570 に配置
             nodes.push({ 
                 id: printId, 
-                position: { x: 500, y: yOffset }, 
-                data: { label: `Print(${res.value})` }, 
-                style: { background: '#4caf50', color: '#fff' } 
+                type: 'printNode',
+                position: { x: 570, y: yOffset }, 
+                data: { 
+                    label: `Print(${res.value})`,
+                    value: res.value
+                } 
             });
 
             edges.push({ id: `e_${res.id}_${printId}`, source: res.id, target: printId, animated: true });
 
             // 仮想コンソールへの出力
             consoleOutput.push(String(res.value));
-            yOffset += 140;
+            yOffset += 160;
         }
     });
 

@@ -35,38 +35,40 @@ const ValNode = ({ data, style }: any) => {
 
     return (
         <div style={{
-            padding: '10px 15px',
-            borderRadius: '8px',
+            padding: '2px 8px',
+            borderRadius: '4px',
             background: bg,
             color: color,
-            border: `2px solid ${borderColor}`,
-            fontSize: '13px',
+            border: `1.5px solid ${borderColor}`,
+            fontSize: '11px',
             fontWeight: 'bold',
             fontFamily: 'Inter, sans-serif',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
-            minWidth: '80px',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+            width: 'max-content',
+            whiteSpace: 'nowrap',
             textAlign: 'center',
-            position: 'relative'
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            minHeight: '20px'
         }}>
             {/* 左側に入力用のターゲットハンドル（代入時にエッジが接続される） */}
             <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
             
-            <div>
-                {data.isVar ? (
-                    <div>
-                        <span style={{ fontSize: '10px', opacity: 0.6, display: 'block', marginBottom: '2px' }}>VAR</span>
-                        {data.label}
-                        <span style={{ display: 'block', fontSize: '11px', marginTop: '4px', borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: '4px', color: '#5d4037' }}>
-                            値: {String(val)}
-                        </span>
-                    </div>
-                ) : (
-                    <div>
-                        <span style={{ fontSize: '10px', opacity: 0.6, display: 'block', marginBottom: '2px' }}>VALUE</span>
-                        {String(val)}
-                    </div>
-                )}
-            </div>
+            {data.isVar ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '8px', opacity: 0.6, background: 'rgba(0,0,0,0.05)', padding: '1px 3px', borderRadius: '2px' }}>VAR</span>
+                    <span style={{ fontSize: '11px' }}>{data.label}</span>
+                    <span style={{ opacity: 0.4 }}>=</span>
+                    <span style={{ fontSize: '11px', color: '#5d4037' }}>{String(val)}</span>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '8px', opacity: 0.6, background: 'rgba(0,0,0,0.05)', padding: '1px 3px', borderRadius: '2px' }}>VALUE</span>
+                    <span style={{ fontSize: '11px' }}>{String(val)}</span>
+                </div>
+            )}
 
             {/* 右側に出力用のソースハンドル */}
             <Handle type="source" position={Position.Right} style={{ background: borderColor }} />
@@ -154,72 +156,80 @@ const OpNode = ({ id, data }: any) => {
 
     return (
         <div style={{
-            borderRadius: '10px',
-            border: `2px solid ${borderColor}`,
+            borderRadius: '6px',
+            border: `1.5px solid ${borderColor}`,
             background: '#ffffff',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
-            fontSize: '12px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
+            fontSize: '11px',
             fontFamily: 'Inter, sans-serif',
-            minWidth: folded ? '140px' : '100px',
+            width: 'max-content',
             overflow: 'hidden',
             transition: 'all 0.2s ease-in-out',
-            position: 'relative'
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column'
         }}>
             {/* 左側に入力用のターゲットハンドル */}
             <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
 
             {folded ? (
-                // --- 簡約表示（Elision）状態 ---
-                <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#78909c' }}>演算 (簡約)</span>
-                        {(data.isElision || data.hasEmbeddedLiteral) && (
-                            <button 
-                                onClick={handleToggle}
-                                style={{
-                                    border: 'none',
-                                    background: '#e0f7fa',
-                                    color: '#006064',
-                                    borderRadius: '4px',
-                                    fontSize: '9px',
-                                    padding: '2px 6px',
-                                    cursor: 'pointer',
-                                    fontWeight: 'bold'
-                                }}
-                            >
-                                展開 ▽
-                            </button>
-                        )}
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#37474f', margin: '4px 0' }}>
-                        <code>{data.isElision ? getFormulaText() : getDisplayLabel()}</code>
-                    </div>
-                    <div style={{
-                        padding: '2px 8px',
-                        borderRadius: '12px',
+                // --- 簡約表示（Elision）状態：1行でコンパクトに表示 ---
+                <div style={{ 
+                    padding: '2px 8px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px', 
+                    whiteSpace: 'nowrap',
+                    minHeight: '20px'
+                }}>
+                    <span style={{ fontSize: '8px', fontWeight: 'bold', color: '#78909c', background: '#eceff1', padding: '1px 3px', borderRadius: '2px' }}>OP</span>
+                    <code style={{ fontSize: '11px', fontWeight: 'bold', color: '#37474f' }}>
+                        {data.isElision ? getFormulaText() : getDisplayLabel()}
+                    </code>
+                    <span style={{ opacity: 0.4 }}>→</span>
+                    <span style={{
+                        padding: '1px 4px',
+                        borderRadius: '8px',
                         background: result === true ? '#e8f5e9' : '#ffebee',
                         color: result === true ? '#2e7d32' : '#c62828',
                         fontWeight: 'bold',
-                        fontSize: '11px',
-                        border: `1px solid ${result === true ? '#c8e6c9' : '#ffcdd2'}`
+                        fontSize: '10px'
                     }}>
                         {String(result)}
-                    </div>
+                    </span>
+                    {(data.isElision || data.hasEmbeddedLiteral) && (
+                        <button 
+                            onClick={handleToggle}
+                            style={{
+                                border: 'none',
+                                background: '#e0f7fa',
+                                color: '#006064',
+                                borderRadius: '3px',
+                                fontSize: '8px',
+                                padding: '1px 3px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            展開 ▽
+                        </button>
+                    )}
                 </div>
             ) : (
                 // --- 詳細表示状態 ---
-                <div>
+                <div style={{ whiteSpace: 'nowrap' }}>
                     <div style={{
                         background: headerBg,
-                        padding: '6px 10px',
+                        padding: '2px 6px',
                         borderBottom: '1px solid rgba(0,0,0,0.06)',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         fontWeight: 'bold',
-                        color: '#455a64'
+                        color: '#455a64',
+                        gap: '8px'
                     }}>
-                        <span>演算: {data.op || '算術'}</span>
+                        <span style={{ fontSize: '9px' }}>演算: {data.op || '算術'}</span>
                         {(data.isElision || data.hasEmbeddedLiteral) && (
                             <button 
                                 onClick={handleToggle}
@@ -227,9 +237,9 @@ const OpNode = ({ id, data }: any) => {
                                     border: 'none',
                                     background: '#eceff1',
                                     color: '#37474f',
-                                    borderRadius: '4px',
-                                    fontSize: '9px',
-                                    padding: '2px 6px',
+                                    borderRadius: '3px',
+                                    fontSize: '8px',
+                                    padding: '1px 3px',
                                     cursor: 'pointer',
                                     fontWeight: 'bold'
                                 }}
@@ -238,28 +248,27 @@ const OpNode = ({ id, data }: any) => {
                             </button>
                         )}
                     </div>
-                    <div style={{ padding: '10px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#263238', margin: '4px 0' }}>
+                    <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#263238' }}>
                             {getDisplayLabel()}
                         </div>
                         {isBoolResult && (
                             <div style={{
-                                marginTop: '6px',
                                 display: 'inline-block',
-                                padding: '2px 8px',
-                                borderRadius: '12px',
+                                padding: '1px 4px',
+                                borderRadius: '8px',
                                 background: result === true ? '#e8f5e9' : '#ffebee',
                                 color: result === true ? '#2e7d32' : '#c62828',
                                 fontWeight: 'bold',
-                                fontSize: '10px'
+                                fontSize: '9px'
                             }}>
                                 結果: {String(result)}
                             </div>
                         )}
                         {data.shortCircuited && (
                             <div style={{
-                                marginTop: '4px',
-                                fontSize: '9px',
+                                marginTop: '2px',
+                                fontSize: '8px',
                                 color: '#e65100',
                                 fontWeight: 'bold'
                             }}>
@@ -276,10 +285,42 @@ const OpNode = ({ id, data }: any) => {
     );
 };
 
+// --- Custom Print Node Component ---
+const PrintNode = ({ data }: any) => {
+    return (
+        <div style={{
+            padding: '2px 8px',
+            borderRadius: '4px',
+            background: '#4caf50',
+            color: '#ffffff',
+            border: '1.5px solid #2e7d32',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            fontFamily: 'Inter, sans-serif',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+            width: 'max-content',
+            whiteSpace: 'nowrap',
+            textAlign: 'center',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            minHeight: '20px'
+        }}>
+            <Handle type="target" position={Position.Left} style={{ background: '#2e7d32' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '8px', opacity: 0.8, background: 'rgba(255,255,255,0.2)', padding: '1px 3px', borderRadius: '2px' }}>PRINT</span>
+                <span style={{ fontSize: '11px' }}>{String(data.value)}</span>
+            </div>
+        </div>
+    );
+};
+
 // カスタムノードの登録
 const nodeTypes = {
     valNode: ValNode,
     opNode: OpNode,
+    printNode: PrintNode,
 };
 
 export default function FlowPane() {
