@@ -124,8 +124,8 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
                 } 
             });
 
-            edges.push({ id: `e_${left.id}_${opId}`, source: left.id, target: opId, animated: true });
-            edges.push({ id: `e_${right.id}_${opId}`, source: right.id, target: opId, animated: true });
+            edges.push({ id: `e_${left.id}_${opId}`, source: left.id, target: opId, targetHandle: 'left', animated: true });
+            edges.push({ id: `e_${right.id}_${opId}`, source: right.id, target: opId, targetHandle: 'right', animated: true });
 
             setLiteralParent(left.id, opId);
             setLiteralParent(right.id, opId);
@@ -212,11 +212,11 @@ export function transpileToSSA(ast: ASTNode[]): TranspileResult {
             });
 
             if (leftRes) {
-                edges.push({ id: `e_${leftRes.id}_${opId}`, source: leftRes.id, target: opId, animated: true });
+                edges.push({ id: `e_${leftRes.id}_${opId}`, source: leftRes.id, target: opId, targetHandle: 'left', animated: true });
                 setLiteralParent(leftRes.id, opId);
             }
             if (rightRes) {
-                edges.push({ id: `e_${rightRes.id}_${opId}`, source: rightRes.id, target: opId, animated: true });
+                edges.push({ id: `e_${rightRes.id}_${opId}`, source: rightRes.id, target: opId, targetHandle: 'right', animated: true });
                 setLiteralParent(rightRes.id, opId);
             }
 

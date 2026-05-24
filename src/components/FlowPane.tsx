@@ -82,6 +82,7 @@ const OpNode = ({ id, data }: any) => {
     const folded = data.folded;
     const isBoolResult = typeof data.result === 'boolean';
     const result = data.result;
+    const isUnary = data.op === 'Not';
 
     // 結果に基づいて枠線・ヘッダーの色を変更
     let borderColor = '#90a4ae';
@@ -169,8 +170,15 @@ const OpNode = ({ id, data }: any) => {
             display: 'flex',
             flexDirection: 'column'
         }}>
-            {/* 左側に入力用のターゲットハンドル */}
-            <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
+            {/* 左側に入力用のターゲットハンドル。Not の場合は中央に1つ、二項演算子の場合は上下に2つ配置 */}
+            {isUnary ? (
+                <Handle type="target" position={Position.Left} id="left" style={{ background: borderColor }} />
+            ) : (
+                <>
+                    <Handle type="target" position={Position.Left} id="left" style={{ top: '25%', background: borderColor }} />
+                    <Handle type="target" position={Position.Left} id="right" style={{ top: '75%', background: borderColor }} />
+                </>
+            )}
 
             {folded ? (
                 // --- 簡約表示（Elision）状態：1行でコンパクトに表示 ---
@@ -180,8 +188,26 @@ const OpNode = ({ id, data }: any) => {
                     alignItems: 'center', 
                     gap: '6px', 
                     whiteSpace: 'nowrap',
-                    minHeight: '20px'
+                    minHeight: isUnary ? '20px' : '28px'
                 }}>
+                    {!isUnary && (
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            alignSelf: 'stretch',
+                            fontSize: '7px',
+                            fontWeight: 'bold',
+                            color: '#90a4ae',
+                            marginRight: '4px',
+                            lineHeight: '1',
+                            paddingTop: '2px',
+                            paddingBottom: '2px'
+                        }}>
+                            <span>L</span>
+                            <span>R</span>
+                        </div>
+                    )}
                     <span style={{ fontSize: '8px', fontWeight: 'bold', color: '#78909c', background: '#eceff1', padding: '1px 3px', borderRadius: '2px' }}>OP</span>
                     <code style={{ fontSize: '11px', fontWeight: 'bold', color: '#37474f' }}>
                         {data.isElision ? getFormulaText() : getDisplayLabel()}
@@ -248,33 +274,57 @@ const OpNode = ({ id, data }: any) => {
                             </button>
                         )}
                     </div>
-                    <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#263238' }}>
-                            {getDisplayLabel()}
-                        </div>
-                        {isBoolResult && (
+                    <div style={{ 
+                        padding: '4px 8px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px',
+                        minHeight: isUnary ? 'auto' : '36px'
+                    }}>
+                        {!isUnary && (
                             <div style={{
-                                display: 'inline-block',
-                                padding: '1px 4px',
-                                borderRadius: '8px',
-                                background: result === true ? '#e8f5e9' : '#ffebee',
-                                color: result === true ? '#2e7d32' : '#c62828',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                height: '24px',
+                                fontSize: '7px',
                                 fontWeight: 'bold',
-                                fontSize: '9px'
+                                color: '#90a4ae',
+                                marginRight: '4px',
+                                lineHeight: '1'
                             }}>
-                                結果: {String(result)}
+                                <span>L</span>
+                                <span>R</span>
                             </div>
                         )}
-                        {data.shortCircuited && (
-                            <div style={{
-                                marginTop: '2px',
-                                fontSize: '8px',
-                                color: '#e65100',
-                                fontWeight: 'bold'
-                            }}>
-                                短絡評価 (右辺未評価)
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', flex: 1 }}>
+                            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#263238' }}>
+                                {getDisplayLabel()}
                             </div>
-                        )}
+                            {isBoolResult && (
+                                <div style={{
+                                    display: 'inline-block',
+                                    padding: '1px 4px',
+                                    borderRadius: '8px',
+                                    background: result === true ? '#e8f5e9' : '#ffebee',
+                                    color: result === true ? '#2e7d32' : '#c62828',
+                                    fontWeight: 'bold',
+                                    fontSize: '9px'
+                                }}>
+                                    結果: {String(result)}
+                                </div>
+                            )}
+                            {data.shortCircuited && (
+                                <div style={{
+                                    marginTop: '2px',
+                                    fontSize: '8px',
+                                    color: '#e65100',
+                                    fontWeight: 'bold'
+                                }}>
+                                    短絡評価 (右辺未評価)
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
