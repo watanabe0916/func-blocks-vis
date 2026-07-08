@@ -67,8 +67,8 @@ const ValNode = ({ data, style, selected }: any) => {
             opacity: (data.isVar && !evaluated) || data.unbound ? GHOST_OPACITY : 1,
             transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s'
         }}>
-            {/* 左側に入力用のターゲットハンドル（代入時にエッジが接続される） */}
-            <Handle type="target" position={Position.Left} style={{ background: borderColor }} />
+            {/* 上側に入力用のターゲットハンドル（代入時にエッジが接続される） */}
+            <Handle type="target" position={Position.Top} style={{ background: borderColor }} />
 
             {data.isVar ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -90,8 +90,8 @@ const ValNode = ({ data, style, selected }: any) => {
                 </div>
             )}
 
-            {/* 右側に出力用のソースハンドル */}
-            <Handle type="source" position={Position.Right} style={{ background: borderColor }} />
+            {/* 下側に出力用のソースハンドル */}
+            <Handle type="source" position={Position.Bottom} style={{ background: borderColor }} />
         </div>
     );
 };
@@ -189,13 +189,13 @@ const OpNode = ({ id, data, selected }: any) => {
             flexDirection: 'column',
             opacity: evaluated ? 1 : GHOST_OPACITY
         }}>
-            {/* 左側に入力用のターゲットハンドル。Not の場合は中央に1つ、二項演算子の場合は上下に2つ配置 */}
+            {/* 上側に入力用のターゲットハンドル。Not の場合は中央に1つ、二項演算子の場合は左右に2つ配置 */}
             {isUnary ? (
-                <Handle type="target" position={Position.Left} id="left" style={{ background: borderColor }} />
+                <Handle type="target" position={Position.Top} id="left" style={{ background: borderColor }} />
             ) : (
                 <>
-                    <Handle type="target" position={Position.Left} id="left" style={{ top: '25%', background: borderColor }} />
-                    <Handle type="target" position={Position.Left} id="right" style={{ top: '75%', background: borderColor }} />
+                    <Handle type="target" position={Position.Top} id="left" style={{ left: '25%', background: borderColor }} />
+                    <Handle type="target" position={Position.Top} id="right" style={{ left: '75%', background: borderColor }} />
                 </>
             )}
 
@@ -209,24 +209,6 @@ const OpNode = ({ id, data, selected }: any) => {
                     whiteSpace: 'nowrap',
                     minHeight: isUnary ? '20px' : '28px'
                 }}>
-                    {!isUnary && (
-                        <div style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'space-between',
-                            alignSelf: 'stretch',
-                            fontSize: '7px',
-                            fontWeight: 'bold',
-                            color: '#90a4ae',
-                            marginRight: '4px',
-                            lineHeight: '1',
-                            paddingTop: '2px',
-                            paddingBottom: '2px'
-                        }}>
-                            <span>L</span>
-                            <span>R</span>
-                        </div>
-                    )}
                     <span style={{ fontSize: '8px', fontWeight: 'bold', color: '#78909c', background: '#eceff1', padding: '1px 3px', borderRadius: '2px' }}>OP</span>
                     <code style={{ fontSize: '11px', fontWeight: 'bold', color: '#37474f' }}>
                         {data.isElision ? getFormulaText() : getDisplayLabel()}
@@ -285,20 +267,19 @@ const OpNode = ({ id, data, selected }: any) => {
                     <div style={{
                         padding: '4px 8px',
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
+                        flexDirection: 'column',
+                        alignItems: 'stretch',
+                        gap: '2px',
                         minHeight: isUnary ? 'auto' : '36px'
                     }}>
                         {!isUnary && (
                             <div style={{
                                 display: 'flex',
-                                flexDirection: 'column',
                                 justifyContent: 'space-between',
-                                height: '24px',
+                                width: '100%',
                                 fontSize: '7px',
                                 fontWeight: 'bold',
                                 color: '#90a4ae',
-                                marginRight: '4px',
                                 lineHeight: '1'
                             }}>
                                 <span>L</span>
@@ -329,8 +310,8 @@ const OpNode = ({ id, data, selected }: any) => {
                 </div>
             )}
 
-            {/* 右側に出力用のソースハンドル */}
-            <Handle type="source" position={Position.Right} style={{ background: borderColor }} />
+            {/* 下側に出力用のソースハンドル */}
+            <Handle type="source" position={Position.Bottom} style={{ background: borderColor }} />
         </div>
     );
 };
@@ -362,7 +343,7 @@ const PrintNode = ({ data, selected }: any) => {
             minHeight: '20px',
             transition: 'border-color 0.2s, box-shadow 0.2s'
         }}>
-            <Handle type="target" position={Position.Left} style={{ background: border }} />
+            <Handle type="target" position={Position.Top} style={{ background: border }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <span style={{ fontSize: '8px', opacity: 0.8, background: 'rgba(255,255,255,0.2)', padding: '1px 3px', borderRadius: '2px' }}>
                     {hasError ? 'ERROR' : 'PRINT'}

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import * as Blockly from 'blockly';
 import * as Ja from 'blockly/msg/ja';
 import { useStore } from '../store.ts';
-import { transpileToSSA } from '../compiler/transpiler.ts';
+import { transpileToFunctionalAst } from '../compiler/transpiler.ts';
+import { evaluate } from '../compiler/evaluator.ts';
+import { renderGraph } from '../compiler/renderGraph.ts';
 import { extractAST } from '../compiler/extractor.ts';
 
 Blockly.setLocale(Ja as any);
@@ -212,7 +214,7 @@ const toolbox = {
             kind: 'category',
             name: '変数',
             colour: 330,
-            custom: 'VARIABLE'
+            custom: 'CUSTOM_VARIABLE'
         },
         {
             kind: 'category',
@@ -261,21 +263,39 @@ export default function BlocklyPane() {
                 scrollbars: true,
                 trashcan: true,
             });
+
+            // 標準の動的「変数」カテゴリ（複数変数の作成・名前変更・
+            // variables_get/set の自動生成）を再利用しつつ、そこに
+            // 自動混入する `math_change`（xを1増やす）ブロックだけを
+            // 除外する。custom:'VARIABLE' をそのまま使うと math_change が
+            // 混入し、静的な variables_set/variables_get 固定リストにすると
+            // 「新しい変数を作成」の導線が失われ全ブロックが単一の変数を
+            // 共有してしまう（＝変数名変更が全箇所に伝播する）ため、
+            // この折衷（標準フライアウトの生成結果をフィルタ）を採る。
+            workspace.current.registerToolboxCategoryCallback('CUSTOM_VARIABLE', (ws) => {
+                const items = Blockly.Variables.flyoutCategory(ws, false);
+                return items.filter((item: any) => !(item.kind === 'block' && item.type === 'math_change'));
+            });
         }
     }, []);
 
     const handleRun = () => {
         if (!workspace.current) return;
-        // 1. ワークスペースから動的にASTを抽出する
+        // ①手続型AST抽出
         const ast = extractAST(workspace.current);
-        console.log('--- Extracted AST ---', ast);
+        console.log('--- ① Procedural AST ---', ast);
 
-        // 2. SSAグラフと実行結果を生成する
-        const result = transpileToSSA(ast);
-        console.log('--- Transpilation Result (SSA Graph & Output) ---', result);
+        // ②関数型ASTへの変換
+        const program = transpileToFunctionalAst(ast);
+        console.log('--- ② Functional AST ---', program);
 
-        // 3. Zustand(store) へデータを渡す
-        const { nodes, edges, consoleOutput } = result;
+        // ③純粋評価器による実行（→trace）
+        const { trace, consoleOutput } = evaluate(program);
+        console.log('--- ③ Evaluation Trace / Console Output ---', trace, consoleOutput);
+
+        // ⑤トレース駆動グラフ描画（④の結果表示はconsoleOutputをそのままstoreへ）
+        const { nodes, edges } = renderGraph(program, trace);
+
         updateGraph(nodes, edges, consoleOutput);
     };
 

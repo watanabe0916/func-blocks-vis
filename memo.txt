@@ -4,6 +4,33 @@
 
 ---
 
+## -1. 実行パイプラインの5段階分離（関数型ASTの独立・純粋評価器・トレース駆動グラフ描画）
+
+`CLAUDE.md` §4 の規定に基づき、従来「グラフ構築」と「評価」が `transpiler.ts` 1ファイルに融合していたアーキテクチャを、以下の5段階パイプラインへ全面移行しました。対象は既存4カテゴリ（変数／数学・計算／論理・比較／テキスト出力）ブロックのみで、新規ブロックの追加は行っていません。
+
+### 新設・変更ファイル
+- `src/compiler/functionalAst.ts`（新設）：独立した関数型ASTの型定義（`Lit`/`Var`/`Let`/`PrimApp`/`Do`）。React Flow・Zustandに一切依存しない。
+- `src/compiler/transpiler.ts`：役割を「①手続型AST→②関数型ASTへの変換」のみに縮小（`transpileToFunctionalAst`。旧`transpileToSSA`は廃止）。評価ロジック・グラフ構築ロジックは一切持たない。
+- `src/compiler/evaluator.ts`（新設）：③純粋評価器。`evaluate(program): { trace, consoleOutput }` というUI非依存の純粋関数。Thunk/force/メモ化/BUILTINSは`transpiler.ts`から移設し、UIノードへの直接書き込みを完全に廃止（forceイベントは`trace`配列への push のみ）。
+- `src/compiler/renderGraph.ts`（新設）：⑤トレース駆動グラフ描画。`renderGraph(program, trace): { nodes, edges }` という、評価を一切行わない純粋関数。
+- `src/components/BlocklyPane.tsx`：`handleRun`が新しい4段階呼び出し（`transpileToFunctionalAst`→`evaluate`→`renderGraph`→`updateGraph`）に変更。
+- `src/components/FlowPane.tsx`：ノードのHandle位置を左右（Left/Right）から上下（Top/Bottom）へ変更（後述のレイアウト方向転換に対応）。
+
+### 視覚設計原則の採用（Weck & Tichy論文 / `DateFlow.md`）
+- **レイアウトを上→下に統一**（従来は左→右）。`renderGraph.ts`内のレイアウト計算は、深さ＝Y・兄弟の広がり＝Xという軸の入れ替えにより実現。
+- **全エッジに静的型ラベル（Number/String/Boolean）を付与**。演算子の型はforceを伴わない静的推論（PrimAppの返り値型はopから一意に決まる、Litはtypeofから、Varは束縛元を再帰的に辿る）で決定するため、未評価（ゴースト）ノードへ向かうエッジにも型ラベルが表示される。
+
+### 既知の変更点・制限
+- 全Print文は、元のソースコード上の記述位置に関わらず、実行パイプライン上は単一の終端`Do`ノードへ集約される（評価順序はプログラム順のまま維持されるが、グラフ上の水平位置は「全Let列→全Print列」の順で配置される）。
+- `CLAUDE.md` §4.6（`haskellPrinter.ts` + GHC差分テストによるCI検証オラクル）は、開発環境に`ghc`/`runghc`が存在せず動作検証ができないため、今回は見送りました。次回以降の課題です。
+- テストフレームワークとして `vitest` を新規導入し（`npm run test`）、評価器・グラフ描画それぞれについて単体テストを追加しました（`src/compiler/evaluator.test.ts` / `src/compiler/renderGraph.test.ts`）。ビルド・リンター・自動テストは全て合格を確認済みですが、この開発環境にはブラウザ自動操作ツールが無く、実際のBlockly UIでのクリック操作・画面表示の目視確認は未実施です。
+
+### 「変数」ツールボックスカテゴリの修正（複数変数対応）
+- Blockly標準の動的カテゴリ（`custom: 'VARIABLE'`）は、`variable_blocks`スタイルとして登録されている標準ブロック`math_change`（「xを1増やす」相当）を自動的にフライアウトへ混入させてしまうため、一時的に`variables_set`/`variables_get`のみの静的カテゴリへ置き換えていた。しかしこの静的カテゴリには「新しい変数を作成」の導線が無く、ドラッグされる全ブロックがBlocklyの単一デフォルト変数を共有してしまい、いずれかのブロックで変数名を変更すると他の全ブロックの変数名も連動して変わる（＝複数の独立した変数を作成できない）という不具合が発生した。
+- `workspace.registerToolboxCategoryCallback('CUSTOM_VARIABLE', ...)` を用い、`Blockly.Variables.flyoutCategory(ws, false)`（標準の動的フライアウト生成結果：変数作成ボタン・変数ごとのget/setブロックを含む）から`type === 'math_change'`のブロックだけを除外する方式に変更した。これにより「複数変数の作成・個別の名前変更」という標準機能を維持したまま、不要な`math_change`ブロックの混入のみを防いでいる。
+
+---
+
 ## 0. 評価モデルの全面刷新（call-by-need / 真の遅延評価）
 
 `CLAUDE.md` の規定に基づき、評価モデルを Launchbury の自然意味論に基づく **call-by-need**（真の遅延評価）へ全面刷新しました。対象は既存の4カテゴリ（変数／数学・計算／論理・比較／テキスト出力）ブロックのみで、新規ブロックの追加は行っていません。

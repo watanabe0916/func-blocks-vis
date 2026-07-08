@@ -91,9 +91,9 @@ Thunk は一度 force されたら結果をキャッシュし、以降の要求�
 Blockly ワークスペース
   → ① 手続型AST抽出         extractor.ts          （既存・変更なし）
   → ② 関数型ASTへの変換      transpiler.ts          （役割を変換のみに縮小）
-  → ③ 純粋評価器による実行    evaluator.ts          （新設）→ { value, trace }
-  → ④ 結果表示               trace中のPrintイベント → 仮想コンソール
-  → ⑤ トレース駆動グラフ描画  FlowPane.tsx / store.ts（(functionalAST, trace) の純粋関数）
+  → ③ 純粋評価器による実行    evaluator.ts          （新設）→ { trace, consoleOutput }
+  → ④ 結果表示               consoleOutput（traceのPrint/errorイベントから導出）→ 仮想コンソール
+  → ⑤ トレース駆動グラフ描画  renderGraph.ts        （新設）→ (functionalAST, trace) の純粋関数
 ```
 ④と⑤は③の出力（`trace`）を共有する兄弟ステージであり、互いに依存しない。②〜⑤の各ステージは他ステージの内部実装に依存してはならず、モジュール境界とステージ境界を一致させる。
 
@@ -108,18 +108,18 @@ React Flow・Zustandに一切依存しない、単独でシリアライズ可能
 §5.2（一般再帰）・§5.4（高階関数）を実装する際は、`LetRec` / `Lambda` / `Apply`（ユーザー関数）をノード種別として追加する。追加のたびに、(a) extractor.ts のマッピング規則、(b) evaluator.ts の評価規則、(c) FlowPane.tsx の描画規則（§4.5 の apply ノード／部分グラフ視覚規則に従う）、(d) haskellPrinter.ts の脱糖規則（§4.6）、(e) §4.7 の対応関係論証、を機械的に追加する。
 
 ### 4.3 純粋評価器 `src/compiler/evaluator.ts`（新設）
-- `evaluate(ast: FunctionalAST): { value: Value, trace: TraceEvent[] }` という **UIに一切依存しない純粋関数** として実装する。
+- `evaluate(program: FunctionalAST): { trace: TraceEvent[], consoleOutput: string[] }` という **UIに一切依存しない純粋関数** として実装する。
 - 内部意味論（Thunkの2状態FSM・WHNF強制・メモ化・需要駆動・短絡評価の創発・⊥の健全な扱い）は §3 の規定をそのまま実装する。
-- 評価中に発生する各forceイベントを `TraceEvent`（対象ノード識別子・force順序・結果値・メモ化ヒットか否か）として記録し、返り値の `trace` に蓄積する。**トレースが、可視化ステージ（§4.5）が必要とする唯一の情報源** となる。ノードのdata変異など、UI側の状態を直接操作してはならない。
+- 評価中に発生する各forceイベントを `TraceEvent`（`force`/`print`/`error`の3種を区別するUnion型。対象ノード識別子・順序・結果値・メモ化ヒットか否か／出力テキスト／エラーメッセージ）として記録し、返り値の `trace` に蓄積する。**トレースが、可視化ステージ（§4.5）が必要とする唯一の情報源** となる。ノードのdata変異など、UI側の状態を直接操作してはならない。1つのPrintが⊥を強制してもtry/catchで捕捉し、後続のPrintの処理は継続する。
 
 ### 4.4 トランスパイラ `src/compiler/transpiler.ts`（役割を縮小）
 - 役割を「①手続型AST → ②関数型ASTへの変換」のみに縮小する。評価ロジック（`force`/`BUILTINS` 等）は一切持たず `evaluator.ts` へ委譲する。
 - SSAバージョニング（変数再代入時の新環境生成）は本ステージの責務のまま維持する（`Let` ノードの生成規則として表現する）。
 
-### 4.5 トレース駆動グラフ描画 `src/components/FlowPane.tsx` / `src/store.ts`
+### 4.5 トレース駆動グラフ描画 `src/compiler/renderGraph.ts`（呼び出し元: `src/components/FlowPane.tsx` / `src/store.ts`）
 視覚語彙は Weck & Tichy, "Visualizing Data-Flows in Functional Programs" のデータフロー図設計原則を採用する（抽出・採否の全根拠・原論文の図解は `DateFlow.md` を参照。同論文の変換経路＝λ計算→圏論表現→unificationは、本システムの「評価器トレースから直接グラフを導出する」設計（§4.5冒頭）と競合するため不採用。ノード種別・エッジ・型注釈・部分グラフ等の**視覚表現層のみ**を流用する）。
 
-- `renderGraph(ast: FunctionalAST, trace: TraceEvent[]): { nodes, edges }` という **評価を一切行わない純粋関数** としてグラフ導出ロジックを実装する。
+- `renderGraph(ast: FunctionalAST, trace: TraceEvent[]): { nodes, edges }` という **評価を一切行わない純粋関数** として `src/compiler/renderGraph.ts` に実装する（状態管理から独立させ、単体テスト容易性を確保するため `store.ts` には混在させない）。
 - **ノード種別ごとに外観を区別する**：関数/演算（矩形、`PrimApp`に対応）、値・変数・リテラル（丸／source、`Lit`/`Var`に対応、入力ポート不要）、動的な関数適用（小さな四角の apply ノード。§5.4 実装時、静的定義を持つ関数ノードと明確に視覚的に区別する）、グラフ全体の入口/出口（黒矢印。sink側を `Do`＝需要の根（§3.4）に対応づける）。
 - **全エッジに型ラベル（Number/String/Boolean）を付与する**。接続される2ポートは同一型でなければならず、これは既存の型不一致バリデーション（`logic_compare_ext` の `onchange` フック）の理論的裏付けとなる。中間データフローの型をすべて明示することで、コード上見えない型の流れを学習者に一望させる。
 - レイアウトは**上から下**への流れに統一する（コード上パラメータが各所に散在するのに比べ、データの生成順を自然に追える読み順を与える）。
