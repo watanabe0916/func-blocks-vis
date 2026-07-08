@@ -240,6 +240,7 @@ const toolbox = {
             name: 'テキスト出力',
             colour: 160,
             contents: [
+                { kind: 'block', type: 'text' },
                 { kind: 'block', type: 'text_print' }
             ]
         }

@@ -1,5 +1,5 @@
 import * as Blockly from 'blockly/core';
-import { ASTNode, ExpressionNode, ArithmeticNode, ApplyNode } from './types';
+import { ASTNode, ExpressionNode, ApplyNode } from './types';
 
 /**
  * Blocklyのワークスペースから独自形式の手続型AST（JSON）を抽出するジェネレータ
@@ -47,8 +47,8 @@ function blockToAST(block: Blockly.Block): ASTNode | null {
         case 'math_change_ext': { // 新しい複合代入ブロック
             const varName = block.getField('VAR')!.getText();
             const op = block.getFieldValue('OP');
-            
-            const opMap: Record<string, ArithmeticNode['type']> = {
+
+            const opMap: Record<string, ApplyNode['op']> = {
                 'ADD': 'Add',
                 'MINUS': 'Sub',
                 'MULTIPLY': 'Mul',
@@ -61,9 +61,12 @@ function blockToAST(block: Blockly.Block): ASTNode | null {
                 type: 'Assign',
                 var: varName,
                 val: {
-                    type: opMap[op] || 'Add',
-                    left: { type: 'Var', name: varName },
-                    right: exprToAST(block.getInputTargetBlock('DELTA'))
+                    type: 'Apply',
+                    op: opMap[op] || 'Add',
+                    args: [
+                        { type: 'Var', name: varName },
+                        exprToAST(block.getInputTargetBlock('DELTA'))
+                    ]
                 }
             };
         }
@@ -93,14 +96,13 @@ function exprToAST(block: Blockly.Block | null): ExpressionNode {
                 name: block.getField('VAR')!.getText() 
             };
 
-        case 'math_arithmetic':
-        case 'math_arithmetic_ext': {
+        case 'math_arithmetic': {
             const op = block.getFieldValue('OP') as string;
             const leftBlock = block.getInputTargetBlock('A');
             const rightBlock = block.getInputTargetBlock('B');
-            
-            // 四則演算のマッピング
-            const opMap: Record<string, ArithmeticNode['type']> = {
+
+            // 四則演算のマッピング（第一級関数適用として統一）
+            const opMap: Record<string, ApplyNode['op']> = {
                 'ADD': 'Add',
                 'MINUS': 'Sub',
                 'MULTIPLY': 'Mul',
@@ -110,9 +112,9 @@ function exprToAST(block: Blockly.Block | null): ExpressionNode {
             };
 
             return {
-                type: opMap[op] || 'Add',
-                left: exprToAST(leftBlock),
-                right: exprToAST(rightBlock)
+                type: 'Apply',
+                op: opMap[op] || 'Add',
+                args: [exprToAST(leftBlock), exprToAST(rightBlock)]
             };
         }
 
