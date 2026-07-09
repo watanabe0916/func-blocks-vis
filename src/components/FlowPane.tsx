@@ -302,7 +302,7 @@ const OpNode = ({ id, data, selected }: any) => {
                                     color: '#e65100',
                                     fontWeight: 'bold'
                                 }}>
-                                    need未到達の入力あり（遅延評価によりスキップ）
+                                    右辺スキップ
                                 </div>
                             )}
                         </div>
