@@ -6,6 +6,7 @@ import { transpileToFunctionalAst } from '../compiler/transpiler.ts';
 import { evaluate } from '../compiler/evaluator.ts';
 import { renderGraph } from '../compiler/renderGraph.ts';
 import { extractAST } from '../compiler/extractor.ts';
+import { showProceduralAst, showFunctionalAst, showTrace } from '../compiler/debugPrint.ts';
 
 Blockly.setLocale(Ja as any);
 
@@ -343,18 +344,19 @@ export default function BlocklyPane() {
 
     const handleRun = () => {
         if (!workspace.current) return;
-        // ①手続型AST抽出
+        // ①手続型AST抽出（ログは節目のみ改行するコンパクト整形。debugPrint.ts）
         const ast = extractAST(workspace.current);
-        console.log('--- ① Procedural AST ---', ast);
+        console.log(`--- ① Procedural AST ---\n${showProceduralAst(ast)}`);
 
         try {
             // ②関数型ASTへの変換
             const program = transpileToFunctionalAst(ast);
-            console.log('--- ② Functional AST ---', program);
+            console.log(`--- ② Functional AST ---\n${showFunctionalAst(program)}`);
 
             // ③純粋評価器による実行（→trace）
             const { trace, consoleOutput } = evaluate(program);
-            console.log('--- ③ Evaluation Trace / Console Output ---', trace, consoleOutput);
+            console.log(`--- ③ Evaluation Trace ---\n${showTrace(trace)}`);
+            console.log('--- ④ Console Output ---', consoleOutput);
 
             // ⑤トレース駆動グラフ描画（④の結果表示はconsoleOutputをそのままstoreへ）
             const { nodes, edges } = renderGraph(program, trace);
