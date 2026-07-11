@@ -194,6 +194,20 @@ Boolean を扱う演算子群です。型制約が厳密に定義されていま
 - renderGraph: loopNode・applyNode×2・仮引数ノード（初回反復値）の描画／自由変数捕捉エッジ／ノード数の線形性。
 - ブラウザ上での手動UI確認は未実施です（ユーザーによる確認待ち）。特にループのグラフレイアウト（仮引数上段・本体クラスタ・サイクルエッジ）は実表示での調整余地があります。
 
+## §4.6 GHC検証オラクル Phase 1（haskellPrinter.ts）
+
+### 脱糖プリンタ本体（src/compiler/haskellPrinter.ts）
+- `printHaskell(program): string` — 関数型ASTからコンパイル可能なdo記法Haskellソースを生成する。本番の実行パスには一切組み込まないCI/開発専用モジュール。
+- 脱糖規則（launchbury.mdの対応表・CLAUDE.md §4.2チェックリスト(d)）: Let→do記法内のlet文／LetRec→letの関数束縛（Haskellのletはletrecなので自己参照がそのまま成立）／LetIn→式レベルlet-in／If→if-then-else／Pair→タプル・Proj→fst/snd／Do→main = do { putStrLn (showJS e); ... }／未束縛Var→`undefined`（Haskellの⊥そのもの。§3.6の意味論と正確に一致し、型検査を通過してforce時のみ実行時例外）。
+- 識別子マングリング: ユーザー変数は `v_` 接頭辞＋不正文字の単射エスケープ（例: 数→_u6570_）、合成束縛 %cond/%loop/%r は `phi_` 接頭辞。接頭辞で名前空間が分離されるため衝突しない。
+- 出力の正規化: 生成ソースに `showJS`（整数値Doubleは"3"、真偽値は小文字、Infinity/NaN）と `jsMod`（JSの%＝被除数の符号・truncated division、除数0はNaN）を埋め込み、evaluate()のconsoleOutputと文字単位で一致させる。数値リテラルは `(n :: Double)` に固定してdefaultingの揺れを防止。
+- 既知の境界（モジュールヘッダに明記）: エラーを含む実行は差分テスト対象外／文脈から型が定まらない裸の⊥はGHCが曖昧型エラーで拒否／極端な数値（1e21以上等）は表示形式がJSと異なる。
+
+### 検証
+- ゴールデンテスト6件（haskellPrinter.test.ts、GHC不要）: Let/PrimApp/Doの脱糖形、⊥→undefined、if-elseφ、%condマングリング、whileのletrec＋タプル出口＋射影、非ASCII変数名のエスケープ。
+- ローカルGHC 9.14.1（brew）による実機確認: 代表5プログラム（算術/IEEE754/jsMod/文字列等価、短絡⊥（§7-5）、if-elseφ、sumループ、if内while）すべてで `ghc -fno-code` 型検査OK・`runghc` 出力がevaluate()と完全一致。短絡プログラムではHaskellの&&がundefinedを触らず"false"を返し、意味論対応がGHC側でも成立することを確認。
+- 残作業: Phase 2＝差分テストハーネスの自動化（`npm run test:ghc`。GHC不在環境ではスキップして通常のnpm run testを壊さない構成にする）、Phase 3＝GitHub Actions（haskell-actions/setup + setup-node）への組み込み。
+
 ## 開発用コンソール出力のコンパクト整形（debugPrint.ts）
 - 「実行」時に console.log していたAST・評価トレースの生オブジェクト（DevToolsのCopy objectで全要素改行される冗長なJSON）を、`src/compiler/debugPrint.ts` の整形文字列に置き換えました。実行パイプラインの一部ではなくログ専用です。
 - 整形規則: プログラム構造の節目だけ改行し、式・文の中身は1行に畳む。

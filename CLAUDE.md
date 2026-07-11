@@ -145,6 +145,7 @@ React Flow・Zustandに一切依存しない、単独でシリアライズ可能
   1. **型検査**：`ghc -fno-code` により構文・型を独立検証する（コード生成・リンクを省略した軽量チェック）。`variables_get` の型抜け穴等、Blockly側の手書きバリデーション（`logic_compare_ext` の `onchange` フック）では検出できない誤りを、GHCの型システムで機械的に検出する。
   2. **差分テスト**：`runghc` により実際に実行し、標準出力を `evaluate()` の結果（trace中のPrintイベント列）と突き合わせる。最終値の意味論的な独立検証とする。
 - 学習者向けUIには、Haskell風プリティプリント結果を **デフォルト非表示・任意展開の補助表示** として提供してよい（初学者の負担を増やさないため）。
+- **【実装済み（Phase 1）】** `haskellPrinter.ts`（脱糖プリンタ本体）とゴールデンテストを実装した。脱糖規則は `launchbury.md` の対応表に従う：Let→do記法内let文、LetRec→letの関数束縛（Haskellのletはletrec）、If→if-then-else、Pair/Proj→タプルとfst/snd、未束縛Var→`undefined`（Haskellの⊥そのもの、§3.6と一致）、%系合成束縛→`phi_`接頭辞へマングリング。JS表示規約との正規化は生成ソース埋め込みの `showJS`（true/3/Infinity/NaN）と `jsMod`（JSの%の符号規約）が担う。ローカルGHC 9.14.1 で代表5プログラム（算術/IEEE754・短絡⊥・if-elseφ・whileループ・if内while）の `ghc -fno-code` 型検査と `runghc` 差分一致を確認済み。既知の境界（エラーを含む実行・文脈から型が定まらない裸の⊥・極端な数値の表示形式）はモジュールヘッダに明記。**残作業**：Phase 2＝差分テストハーネスの自動化（`npm run test:ghc`、GHC不在環境ではスキップ）、Phase 3＝GitHub Actionsへの組み込み（これによりCI専用オラクルの位置づけが構造的に完成する）。
 
 ### 4.7 Launchbury対応関係論証の要件
 - `evaluator.ts` の実装時、以下の対応表をコードコメントまたは別ドキュメントとして記述する：`Lit`↔LIT規則、`Var`↔VAR規則（ヒープ更新=メモ化）、`Let`↔LET規則↔Haskellの `do{let decls;stmts}=let decls in do{stmts}`、`PrimApp`↔PRIMOP拡張規則、`If`↔CASE規則のBool特殊化↔Haskellの脱糖 `if c then a else b = case c of {True->a; False->b}`、`Do`(Printの列)↔トップレベル評価の起点↔Haskellの `do{e;stmts}=e >> do{stmts}`。
