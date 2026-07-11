@@ -87,6 +87,31 @@ Blockly.defineBlocksWithJsonArray([
     "tooltip": "条件が true なら「ならば」の中身、false なら「そうでなければ」の中身が採用されます（内部では三項演算子へ変換され、選ばれなかった側は評価されません）",
     "helpUrl": ""
   },
+  // controls_while_ext: while文（§5.2）。手続型のメンタルモデル（条件を満たす間
+  // くり返して代入）のまま組み立てさせ、裏側で letrec の自己参照関数へ変換する。
+  // ループ内で再代入される変数は関数の仮引数（＝ループ先頭のφ）、再代入されない
+  // 変数は自由変数として閉包に捕捉される（transform.md §1）。
+  // 現行スコープではループ内のPrint・ループの入れ子は変換時に明示エラーとなる。
+  {
+    "type": "controls_while_ext",
+    "message0": "%1 のあいだ %2 をくり返す",
+    "args0": [
+        {
+            "type": "input_value",
+            "name": "COND",
+            "check": "Boolean"
+        },
+        {
+            "type": "input_statement",
+            "name": "DO"
+        }
+    ],
+    "previousStatement": null,
+    "nextStatement": null,
+    "colour": 210,
+    "tooltip": "条件が true のあいだ中身をくり返します（内部では自己参照関数（letrec）の末尾呼び出しへ変換されます）",
+    "helpUrl": ""
+  },
   // logic_boolean_ext
   {
     "type": "logic_boolean_ext",
@@ -270,7 +295,8 @@ const toolbox = {
             name: '制御',
             colour: 210,
             contents: [
-                { kind: 'block', type: 'controls_if_ext' }
+                { kind: 'block', type: 'controls_if_ext' },
+                { kind: 'block', type: 'controls_while_ext' }
             ]
         },
         {

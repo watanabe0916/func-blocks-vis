@@ -1,4 +1,4 @@
-import { ApplyNode, Value } from './types';
+import type { ApplyNode, Value } from './types';
 
 // 関数型AST（CLAUDE.md §4.2）。React Flow・Zustandに一切依存しない、
 // 単独でシリアライズ可能な型として定義する。
@@ -30,7 +30,25 @@ export type FPrimApp = { kind: 'PrimApp'; id: string; op: PrimOp; args: FExpr[] 
 // なかった分岐Thunkには需要が届かない。
 export type FIf = { kind: 'If'; id: string; cond: FExpr; then: FExpr; else: FExpr };
 
-export type FExpr = FLit | FVar | FPrimApp | FIf;
+// 式レベルのlet（§5.2）。ループ本体は反復ごとに新しい環境で評価されるため、
+// 本体内のSSA束縛はプログラムレベルのLetへ巻き上げられず、式の内側に現れる。
+// LaunchburyのLET規則の直接の対応物（彼の計算では let はもともと式である）。
+export type FLetIn = { kind: 'LetIn'; id: string; name: string; value: FExpr; body: FExpr };
+
+// 名前付き関数の飽和適用（§5.2の制限付きAPP規則、launchbury.md §2.2）。
+// 第一級のラムダ値・部分適用は§5.4で導入する。
+export type FApply = { kind: 'Apply'; id: string; fn: string; args: FExpr[] };
+
+// 対（consセルの最小形、launchbury.md §2.3）。複数ループ変数を持つwhileの
+// 出口値を表現する。forceはWHNFまで＝外側のセルだけを暴き、fst/sndの
+// Thunkは未評価のまま残る（§3.2。§5.3の無限リストの直接の準備）。
+export type FPair = { kind: 'Pair'; id: string; fst: FExpr; snd: FExpr };
+
+// 射影（fst/snd）。CASE規則の対応物：scrutinee（対）をWHNFまでforceし、
+// 選択された成分Thunkのforceに移る。
+export type FProj = { kind: 'Proj'; id: string; which: 'fst' | 'snd'; pair: FExpr };
+
+export type FExpr = FLit | FVar | FPrimApp | FIf | FLetIn | FApply | FPair | FProj;
 
 // SSA代入に対応する束縛（`let x_n = e in ...` というネストした direct style。
 // CLAUDE.md §2の評価戦略と一致）。
@@ -39,10 +57,17 @@ export type FLet = { kind: 'Let'; id: string; name: string; value: FExpr; body: 
 // Print文（IOアクション）。
 export type FPrint = { kind: 'Print'; id: string; expr: FExpr };
 
+// 自己参照束縛（letrec、§5.2）。whileループを表す名前付き再帰関数を束縛する。
+// 束縛される値は関数（ラムダ＝WHNF）のみで、閉包環境に自分自身を含める
+// （不動点）。LaunchburyのLET規則はもともと相互再帰的な束縛を扱うため、
+// これはLET規則の本来の一般性の回復である（launchbury.md §2.1）。
+// 値レベルの自己参照束縛（xs = cons(1, xs) 等）は§5.3で導入する。
+export type FLetRec = { kind: 'LetRec'; id: string; name: string; params: string[]; fnBody: FExpr; body: FProgram };
+
 // `Print` 文の列（IOアクションの逐次実行に対応する需要の根、§3.4）。
 export type FDo = { kind: 'Do'; id: string; actions: FPrint[] };
 
-export type FProgram = FLet | FDo;
+export type FProgram = FLet | FLetRec | FDo;
 
 // Let束縛（変数）の正準ノードID。評価器・renderGraphの双方がこの規則で
 // 変数のヒープ位置を参照する（FVar.name からの解決先）。

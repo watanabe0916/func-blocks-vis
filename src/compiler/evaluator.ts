@@ -1,5 +1,5 @@
-import { Value, Thunk, Env } from './types';
-import { FExpr, FProgram, PrimOp, canonicalUnboundId } from './functionalAst';
+import { Value, Thunk, Env, FnValue, showValue } from './types';
+import { FExpr, FProgram, PrimOp, canonicalVarId, canonicalUnboundId } from './functionalAst';
 
 /**
  * ③純粋評価器（CLAUDE.md §4.3）。UIに一切依存しない純粋関数として、
@@ -17,11 +17,23 @@ import { FExpr, FProgram, PrimOp, canonicalUnboundId } from './functionalAst';
  *   If      ↔ CASE規則のBool特殊化（scrutineeのみWHNFまで評価し、
  *             選ばれた分岐の式の評価に移る。§5.1）
  *             ↔ Haskellの脱糖 `if c then a else b = case c of {True->a; False->b}`
+ *   LetIn   ↔ LET規則（式レベル。Launchburyの計算ではletはもともと式）
+ *   LetRec  ↔ LET規則の本来の一般性（相互再帰束縛）の回復。束縛される値は
+ *             関数（ラムダ＝WHNF）のみで、閉包環境に自分自身を含める（不動点）
+ *   Apply   ↔ APP規則の制限形（名前付き関数の飽和適用のみ。汎用APP規則は§5.4）
+ *   Pair    ↔ コンストラクタ（WHNF＝外側のみ暴き、成分Thunkは未評価のまま。§3.2）
+ *   Proj    ↔ CASE規則（scrutineeをWHNFまでforceし、選択された成分の
+ *             forceに移る）
  *   Do      ↔ トップレベル評価の起点（需要の根、§3.4）
  *             ↔ Haskellの `do{e;stmts} = e >> do{stmts}`
- * この対応が低コストで成立するのは、ユーザー定義ラムダ・自己参照letrecが
- * 存在しない現行スコープに限られる（§5.2/§5.4実装前）。
+ * 上記対応表は launchbury.md の要約である（齟齬がある場合は同文書を正とする）。
  */
+
+// 適用回数の上限（CLAUDE.md §5.2(e)の決定事項、launchbury.md §2.5）。
+// 正格化オプションは導入せず、非停止プログラムからのブラウザ保護・
+// JSコールスタック保護・§4.5の線形性指標の維持をこの上限が担う。
+// 意味論の一部ではなく、上限内で停止するプログラムの観測結果には影響しない。
+const MAX_APPLICATIONS = 500;
 
 export type TraceEvent =
     | { kind: 'force'; nodeId: string; order: number; value: Value; memoHit: boolean }
@@ -63,14 +75,26 @@ export function evaluate(program: FProgram): EvalResult {
         if (thunk.cell.state === 'evaluated') {
             value = thunk.cell.value;
             memoHit = true;
+        } else if (thunk.cell.state === 'forcing') {
+            // ブラックホール：評価中のThunkへの再need＝循環定義（⊥）。
+            // LaunchburyのVAR規則が「束縛の評価中、その束縛をヒープから
+            // 取り除く」ことに対応する（launchbury.md §2.4）。この分岐に
+            // 到達するのは意味論上⊥を表すプログラムのみであり、観測的
+            // 純粋性は保たれる。
+            throw new Error('循環定義を検出しました（自分自身の値を必要とする定義＝⊥）');
         } else {
-            value = thunk.cell.compute();
+            const compute = thunk.cell.compute;
+            thunk.cell = { state: 'forcing' };
+            value = compute();
             thunk.cell = { state: 'evaluated', value };
             memoHit = false;
         }
         trace.push({ kind: 'force', nodeId: thunk.nodeId, order: order++, value, memoHit });
         return value;
     };
+
+    // 適用回数カウンタ（MAX_APPLICATIONS の説明を参照）。
+    let applyCount = 0;
 
     const BUILTINS: Record<PrimOp, Builtin> = {
         Add: (a) => Number(force(a[0])) + Number(force(a[1])),
@@ -143,6 +167,89 @@ export function evaluate(program: FProgram): EvalResult {
                 },
             };
         }
+        if (expr.kind === 'LetIn') {
+            // 式レベルのlet（LET規則）。束縛時にforceしない。let自体は透明で、
+            // LetIn式のThunkはbodyのThunkそのものである。
+            // 注意: ループ本体内のLetInは反復ごとに同じ静的idで別のThunkが
+            // 生成される。trace上は同一nodeIdの複数forceイベントとなり、
+            // 可視化（renderGraph）は最初の発生＝初回反復の値を表示する。
+            const rhs = buildThunk(expr.value, env);
+            const newEnv: Env = new Map(env);
+            newEnv.set(expr.name, {
+                nodeId: expr.id,
+                cell: { state: 'unevaluated', compute: () => force(rhs) },
+            });
+            return buildThunk(expr.body, newEnv);
+        }
+        if (expr.kind === 'Apply') {
+            // APP規則の制限形（名前付き関数の飽和適用、launchbury.md §2.2）。
+            // 実引数Thunkは呼び出し側の環境で一度だけ構築する。
+            const argThunks = expr.args.map((a) => buildThunk(a, env));
+            return {
+                nodeId: expr.id,
+                cell: {
+                    state: 'unevaluated',
+                    compute: () => {
+                        const fnThunk = env.get(expr.fn);
+                        if (!fnThunk) {
+                            throw new Error(`未定義の関数 '${expr.fn}' が適用されました`);
+                        }
+                        const fnValue = force(fnThunk);
+                        if (typeof fnValue !== 'object' || fnValue.kind !== 'fn') {
+                            throw new Error(`'${expr.fn}' は関数ではない値に適用されました`);
+                        }
+                        applyCount++;
+                        if (applyCount > MAX_APPLICATIONS) {
+                            throw new Error(
+                                `反復回数が上限（${MAX_APPLICATIONS}）を超えました。ループの条件が偽になるか確認してください`
+                            );
+                        }
+                        // 関数の定義時環境（閉包）を仮引数↦実引数Thunkで拡張する
+                        // ＝APP規則の代入 e'[x/y] の環境表現。仮引数の正準ノードID
+                        // でラップし、可視化がループ先頭のφ（＝仮引数）の初回force
+                        // 値を表示できるようにする。
+                        const callEnv: Env = new Map(fnValue.env);
+                        fnValue.params.forEach((p, i) => {
+                            const arg = argThunks[i];
+                            callEnv.set(p, {
+                                nodeId: canonicalVarId(p),
+                                cell: { state: 'unevaluated', compute: () => force(arg) },
+                            });
+                        });
+                        return force(buildThunk(fnValue.body, callEnv));
+                    },
+                },
+            };
+        }
+        if (expr.kind === 'Pair') {
+            // コンストラクタ：forceはWHNFまで＝外側のセルだけを返し、
+            // fst/sndのThunkは未評価のまま保持する（§3.2）。
+            const fstThunk = buildThunk(expr.fst, env);
+            const sndThunk = buildThunk(expr.snd, env);
+            return {
+                nodeId: expr.id,
+                cell: { state: 'unevaluated', compute: () => ({ kind: 'pair', fst: fstThunk, snd: sndThunk }) },
+            };
+        }
+        if (expr.kind === 'Proj') {
+            // CASE規則：scrutinee（対）をWHNFまでforceし、選択された成分の
+            // forceに移る。射影式が構文上複製されていても、到達する成分Thunkは
+            // 対の中の同一オブジェクトであるため共有（§3.3）が保たれる。
+            const pairThunk = buildThunk(expr.pair, env);
+            return {
+                nodeId: expr.id,
+                cell: {
+                    state: 'unevaluated',
+                    compute: () => {
+                        const p = force(pairThunk);
+                        if (typeof p !== 'object' || p.kind !== 'pair') {
+                            throw new Error('対（Pair）でない値への射影が要求されました');
+                        }
+                        return force(expr.which === 'fst' ? p.fst : p.snd);
+                    },
+                },
+            };
+        }
         // PrimApp: 引数Thunkは一度だけ構築する（forceのたびに再構築しない）。
         const argThunks = expr.args.map((a) => buildThunk(a, env));
         return {
@@ -168,6 +275,25 @@ export function evaluate(program: FProgram): EvalResult {
             return;
         }
 
+        if (node.kind === 'LetRec') {
+            // 自己参照束縛（LET規則の本来の一般性、launchbury.md §2.1）。
+            // 関数（ラムダ）はそれ自体がWHNFの値であるため evaluated 状態で
+            // 束縛してよく、閉包環境 newEnv に自分自身を含めることで自己参照
+            // （不動点）が成立する。Thunkは定義時にforceされないため、
+            // 定義時の無限展開は起きない（§5.2）。
+            const newEnv: Env = new Map(env);
+            const fnValue: FnValue = {
+                kind: 'fn',
+                name: node.name,
+                params: node.params,
+                body: node.fnBody,
+                env: newEnv,
+            };
+            newEnv.set(node.name, { nodeId: node.id, cell: { state: 'evaluated', value: fnValue } });
+            run(node.body, newEnv);
+            return;
+        }
+
         // Do: 仮想コンソールへの出力を需要の根として、プログラム順にforce
         // する。1つのPrintの需要が失敗（⊥の強制）しても、後続のPrintの
         // 処理は継続する。
@@ -175,8 +301,8 @@ export function evaluate(program: FProgram): EvalResult {
             const thunk = buildThunk(action.expr, env);
             try {
                 const value = force(thunk);
-                trace.push({ kind: 'print', nodeId: action.id, order: order++, text: String(value) });
-                consoleOutput.push(String(value));
+                trace.push({ kind: 'print', nodeId: action.id, order: order++, text: showValue(value) });
+                consoleOutput.push(showValue(value));
             } catch (e) {
                 const message = e instanceof Error ? e.message : String(e);
                 trace.push({ kind: 'error', nodeId: action.id, order: order++, message });

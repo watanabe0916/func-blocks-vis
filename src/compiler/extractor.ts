@@ -54,6 +54,13 @@ function blockToAST(block: Blockly.Block): ASTNode | null {
                 val: exprToAST(block.getInputTargetBlock('TEXT'))
             };
 
+        case 'controls_while_ext': // while文（§5.2。関数型ASTではletrecの自己参照関数へ変換される）
+            return {
+                type: 'While',
+                cond: exprToAST(block.getInputTargetBlock('COND')),
+                body: stmtChainToAST(block.getInputTargetBlock('DO')),
+            };
+
         case 'controls_if_ext': // if-else文（§5.1。関数型ASTでは三項演算子へ変換される）
             return {
                 type: 'If',

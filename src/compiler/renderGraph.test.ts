@@ -147,6 +147,69 @@ describe('renderGraph: pure trace-driven graph derivation', () => {
         expect(thenArm?.data.evalState).toBe('evaluated');
     });
 
+    it('§5.2: renders a while loop as a loopNode with parameter nodes and apply nodes', () => {
+        // sum=0; i=0; while (i<3) { sum=sum+i; i=i+1 }; print sum
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'sum', val: { type: 'Literal', value: 0 } },
+            { type: 'Assign', var: 'i', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 3 }] },
+                body: [
+                    { type: 'Assign', var: 'sum', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'sum' }, { type: 'Var', name: 'i' }] } },
+                    { type: 'Assign', var: 'i', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 1 }] } },
+                ],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'sum' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { trace } = evaluate(program);
+        const { nodes, edges } = renderGraph(program, trace);
+
+        // letrec関数定義ノード（破線枠）と、末尾自己呼び出し＋初回起動の
+        // 2つのapplyノード（小さな四角）が描かれる
+        const loopNode = nodes.find((n) => n.type === 'loopNode');
+        expect(loopNode).toBeDefined();
+        expect(loopNode?.data.evalState).toBe('evaluated');
+        const applyNodes = nodes.filter((n) => n.type === 'applyNode');
+        expect(applyNodes.length).toBe(2);
+
+        // 仮引数（ループ先頭のφ）ノードが存在し、初回反復の値（初期値）を表示する
+        const paramSum = nodes.find((n) => n.id === 'var_sum_2');
+        const paramI = nodes.find((n) => n.id === 'var_i_2');
+        expect(paramSum?.data.evalState).toBe('evaluated');
+        expect(paramSum?.data.result).toBe(0);
+        expect(paramI?.data.result).toBe(0);
+
+        // 健全性指標：ノード数はブロック数に対して線形に収まる
+        expect(nodes.length).toBeLessThan(40);
+        expect(edges.length).toBeLessThan(40);
+    });
+
+    it('§5.2: draws a free-variable capture edge from a loop-invariant binding into the loop body', () => {
+        // n=5; x=0; while (x<n) { x=x+n }; print x
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'n', val: { type: 'Literal', value: 5 } },
+            { type: 'Assign', var: 'x', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'x' }, { type: 'Var', name: 'n' }] },
+                body: [
+                    { type: 'Assign', var: 'x', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'x' }, { type: 'Var', name: 'n' }] } },
+                ],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'x' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { trace } = evaluate(program);
+        const { edges } = renderGraph(program, trace);
+
+        // ループ不変変数 n_1 の束縛ノードからループ本体内の演算ノードへ
+        // エッジが伸びる（Weck & Tichy 原則4-2の自由変数捕捉エッジ）
+        const captureEdges = edges.filter((e) => e.source === 'var_n_1');
+        expect(captureEdges.length).toBeGreaterThan(0);
+    });
+
     it('§5.1: renders a shared %cond binding as a single 条件 node feeding every φ', () => {
         // a=1; if (a<5) { x=1; y=2 } else { x=3 }; print x; print y
         const ast: ASTNode[] = [

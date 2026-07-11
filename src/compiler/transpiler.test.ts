@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ASTNode } from './types';
 import { transpileToFunctionalAst } from './transpiler';
-import { FProgram, FLet, FIf, FVar } from './functionalAst';
+import { FProgram, FLet, FLetRec, FIf, FVar, FLetIn, FApply, FPair } from './functionalAst';
 
 /**
  * [S]（住井ら, transform.md §2）の適格性(well-formedness)述語に倣い、
@@ -20,6 +20,11 @@ function collectLetNames(program: FProgram, acc: string[] = []): string[] {
         acc.push(program.name);
         return collectLetNames(program.body, acc);
     }
+    if (program.kind === 'LetRec') {
+        // 束縛名の一意性検査には関数名・仮引数名も含める（launchbury.md §3）
+        acc.push(program.name, ...program.params);
+        return collectLetNames(program.body, acc);
+    }
     return acc;
 }
 
@@ -27,6 +32,20 @@ function findLet(program: FProgram, name: string): FLet | null {
     if (program.kind === 'Let') {
         if (program.name === name) return program;
         return findLet(program.body, name);
+    }
+    if (program.kind === 'LetRec') {
+        return findLet(program.body, name);
+    }
+    return null;
+}
+
+function findLetRec(program: FProgram, name: string): FLetRec | null {
+    if (program.kind === 'LetRec') {
+        if (program.name === name) return program;
+        return findLetRec(program.body, name);
+    }
+    if (program.kind === 'Let') {
+        return findLetRec(program.body, name);
     }
     return null;
 }
@@ -181,5 +200,116 @@ describe('§5.1 if-else → 三項演算子（φ = If ノードの返り値）',
         const program = transpileToFunctionalAst(ast);
         expect(collectLetNames(program)).toEqual([]);
         expect(program.kind).toBe('Do');
+    });
+});
+
+describe('§5.2 while → letrec自己参照関数（ループ先頭のφ = 仮引数）', () => {
+    it('turns loop variables into parameters and returns the exit values as a pair', () => {
+        // sum=0; i=0; while (i<3) { sum=sum+i; i=i+1 }; print sum
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'sum', val: { type: 'Literal', value: 0 } },
+            { type: 'Assign', var: 'i', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 3 }] },
+                body: [
+                    { type: 'Assign', var: 'sum', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'sum' }, { type: 'Var', name: 'i' }] } },
+                    { type: 'Assign', var: 'i', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 1 }] } },
+                ],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'sum' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+
+        // 束縛名（関数名・仮引数名を含む）の一意性
+        const names = collectLetNames(program);
+        expect(names).toEqual(['sum_1', 'i_1', '%loop_1', 'sum_2', 'i_2', '%r_1', 'sum_4', 'i_4']);
+        expect(new Set(names).size).toBe(names.length);
+
+        // ループ先頭のφ = 仮引数（sum_2, i_2）
+        const loop = findLetRec(program, '%loop_1')!;
+        expect(loop.params).toEqual(['sum_2', 'i_2']);
+
+        // 本体：If(cond, LetIn sum_3 → LetIn i_3 → 末尾自己呼び出し, 出口の対)
+        const fnBody = loop.fnBody as FIf;
+        expect(fnBody.kind).toBe('If');
+        const letSum = fnBody.then as FLetIn;
+        expect(letSum.kind).toBe('LetIn');
+        expect(letSum.name).toBe('sum_3');
+        const letI = letSum.body as FLetIn;
+        expect(letI.name).toBe('i_3');
+        const tail = letI.body as FApply;
+        expect(tail.kind).toBe('Apply');
+        expect(tail.fn).toBe('%loop_1');
+        expect(tail.args.map((a) => (a as FVar).name)).toEqual(['sum_3', 'i_3']);
+
+        // 出口値は仮引数の対
+        const exit = fnBody.else as FPair;
+        expect(exit.kind).toBe('Pair');
+        expect((exit.fst as FVar).name).toBe('sum_2');
+        expect((exit.snd as FVar).name).toBe('i_2');
+
+        // 合流後の版は %r_1 からの射影
+        const r = findLet(program, '%r_1')!;
+        expect(r.value.kind).toBe('Apply');
+        expect((r.value as FApply).args.map((a) => (a as FVar).name)).toEqual(['sum_1', 'i_1']);
+        expect(findLet(program, 'sum_4')!.value.kind).toBe('Proj');
+        expect(findLet(program, 'i_4')!.value.kind).toBe('Proj');
+    });
+
+    it('captures loop-invariant variables as free variables, not parameters (transform.md (c))', () => {
+        // n=5; x=0; while (x<n) { x=x+n }; print x
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'n', val: { type: 'Literal', value: 5 } },
+            { type: 'Assign', var: 'x', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'x' }, { type: 'Var', name: 'n' }] },
+                body: [
+                    { type: 'Assign', var: 'x', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'x' }, { type: 'Var', name: 'n' }] } },
+                ],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'x' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+
+        const loop = findLetRec(program, '%loop_1')!;
+        // n はループ内で再代入されないため仮引数にならず、自由変数として捕捉される
+        expect(loop.params).toEqual(['x_2']);
+        expect(JSON.stringify(loop.fnBody)).toContain('"n_1"');
+
+        // ループ変数が1つなら対を作らず、適用結果を直接束縛する（%r/射影なし）。
+        // x_3 は本体内（LetIn）の版であり、ループ後の合流版は x_4 となる。
+        const names = collectLetNames(program);
+        expect(names).toEqual(['n_1', 'x_1', '%loop_1', 'x_2', 'x_4']);
+        expect(findLet(program, 'x_4')!.value.kind).toBe('Apply');
+    });
+
+    it('rejects nested while loops with an explicit error (expression-level letrec is out of scope)', () => {
+        const ast: ASTNode[] = [
+            {
+                type: 'While',
+                cond: { type: 'Literal', value: true },
+                body: [
+                    {
+                        type: 'While',
+                        cond: { type: 'Literal', value: false },
+                        body: [{ type: 'Assign', var: 'x', val: { type: 'Literal', value: 1 } }],
+                    },
+                ],
+            },
+        ];
+        expect(() => transpileToFunctionalAst(ast)).toThrow(/入れ子/);
+    });
+
+    it('rejects a Print inside a loop body with an explicit error', () => {
+        const ast: ASTNode[] = [
+            {
+                type: 'While',
+                cond: { type: 'Literal', value: true },
+                body: [{ type: 'Print', val: { type: 'Literal', value: 1 } }],
+            },
+        ];
+        expect(() => transpileToFunctionalAst(ast)).toThrow(/未対応/);
     });
 });

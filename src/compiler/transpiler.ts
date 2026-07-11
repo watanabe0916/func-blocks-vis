@@ -1,4 +1,4 @@
-import { ASTNode, ExpressionNode, IfNode } from './types';
+import { ASTNode, ExpressionNode, IfNode, WhileNode } from './types';
 import { FExpr, FProgram, FPrint, canonicalVarId } from './functionalAst';
 
 /**
@@ -28,6 +28,26 @@ import { FExpr, FProgram, FPrint, canonicalVarId } from './functionalAst';
  *   引数は変数でなければならない」への対応でもある）。
  * - 分岐内のPrintは現行スコープでは未対応とし、明示エラーを投げる
  *   （需要の根が条件付きになり、無条件のPrint列であるDoの意味論を超えるため）。
+ *
+ * while文（§5.2）の変換規則（transform.md §1 の (a)〜(c)）:
+ * - (a) ループ本体は letrec による自己参照関数（%loop_n）として表現する
+ *   （基本ブロック＝関数、ジャンプ＝末尾呼び出し、[S]§2.1）。
+ * - (b) ループ内で再代入される変数はその関数の仮引数とする。初回呼び出しの
+ *   実引数はループ突入前の版、末尾自己呼び出しの実引数は各周回での更新後の
+ *   版——これが「ループ先頭のφ = 仮引数」（[K]§4・[M]§8.1・[S]の一致した知見。
+ *   §5.1のdiamond型φ＝三項演算子とは異なり、ループ先頭のφは三項演算子では
+ *   表現できない）。
+ * - (c) ループ内で再代入されないループ不変変数は仮引数にせず、外側スコープの
+ *   自由変数として閉包に捕捉させる（[M]§3の貢献。エッジ数の線形性にも寄与）。
+ * - 複数のループ変数を持つwhileの出口値は入れ子の対（Pair）で返し、合流後の
+ *   新しい版は %r_n から射影（Proj）して束縛する。%r_n を一度だけlet束縛して
+ *   から射影するのは、Launchburyの正規化「適用の引数は変数」への対応
+ *   （launchbury.md §1・§2.3。射影式が複製されても対の中の同一Thunkを
+ *   共有するため再計算は起きない）。
+ * - 分岐内Printと同じ理由でループ内Printは未対応（明示エラー）。ループの
+ *   入れ子（whileの中のwhile）は式レベルletrecが必要になるため現行スコープ
+ *   では未対応とし、明示エラーを投げる（if分岐の中のwhileは、束縛の巻き上げに
+ *   よりプログラムレベルに現れるため対応済み）。
  *
  * なお、Blocklyの入力は構造化制御フロー（if/whileはブロックの入れ子）で
  * あり任意のgotoを持たないため、[K][M]（transform.md）が扱う支配木
@@ -75,21 +95,41 @@ export function transpileToFunctionalAst(ast: ASTNode[]): FProgram {
         };
     };
 
-    type Binding = { id: string; name: string; value: FExpr };
+    type Binding =
+        | { kind: 'plain'; id: string; name: string; value: FExpr }
+        | { kind: 'rec'; id: string; name: string; params: string[]; fnBody: FExpr };
+    type Ctx = { topLevel: boolean; inLoop: boolean };
     const prints: FPrint[] = [];
 
-    const processIf = (stmt: IfNode, bindings: Binding[]): void => {
+    // 手続型ASTの文列を静的に走査し、代入される変数名を出現順に収集する
+    // （whileのループ変数＝仮引数の決定に使う。transform.md (b)）。
+    const collectAssignedVars = (stmts: ASTNode[], acc: string[] = []): string[] => {
+        stmts.forEach((s) => {
+            if (s.type === 'Assign') {
+                if (!acc.includes(s.var)) acc.push(s.var);
+            } else if (s.type === 'If') {
+                collectAssignedVars(s.then, acc);
+                collectAssignedVars(s.else, acc);
+            } else if (s.type === 'While') {
+                collectAssignedVars(s.body, acc);
+            }
+        });
+        return acc;
+    };
+
+    const processIf = (stmt: IfNode, bindings: Binding[], ctx: Ctx): void => {
         // 条件式は分岐前の版を参照して構築する。
         const condExpr = buildFExpr(stmt.cond);
         const saved = { ...current };
 
+        const branchCtx: Ctx = { topLevel: false, inLoop: ctx.inLoop };
         const thenBindings: Binding[] = [];
-        processStmts(stmt.then, thenBindings, false);
+        processStmts(stmt.then, thenBindings, branchCtx);
         const thenCurrent = current;
 
         current = { ...saved };
         const elseBindings: Binding[] = [];
-        processStmts(stmt.else, elseBindings, false);
+        processStmts(stmt.else, elseBindings, branchCtx);
         const elseCurrent = current;
 
         current = { ...saved };
@@ -126,7 +166,7 @@ export function transpileToFunctionalAst(ast: ASTNode[]): FProgram {
             condRef = () => condExpr;
         } else {
             const condName = `%cond_${nextVersion('%cond')}`;
-            bindings.push({ id: canonicalVarId(condName), name: condName, value: condExpr });
+            bindings.push({ kind: 'plain', id: canonicalVarId(condName), name: condName, value: condExpr });
             condRef = () => ({ kind: 'Var', id: nextId('var'), name: condName });
         }
 
@@ -144,6 +184,7 @@ export function transpileToFunctionalAst(ast: ASTNode[]): FProgram {
             current[v] = ver;
             const name = `${v}_${ver}`;
             bindings.push({
+                kind: 'plain',
                 id: canonicalVarId(name),
                 name,
                 value: { kind: 'If', id: nextId('if'), cond: condRef(), then: thenArm, else: elseArm },
@@ -151,7 +192,107 @@ export function transpileToFunctionalAst(ast: ASTNode[]): FProgram {
         });
     };
 
-    const processStmts = (stmts: ASTNode[], bindings: Binding[], topLevel: boolean): void => {
+    const processWhile = (stmt: WhileNode, bindings: Binding[]): void => {
+        // ループ変数 = 本体内で代入される変数（transform.md (b)）。それ以外の
+        // 参照はすべて外側スコープの自由変数として閉包に捕捉される（(c)）。
+        const loopVars = collectAssignedVars(stmt.body);
+        if (loopVars.length === 0) {
+            // 何も束縛しないループには需要が発生しえず、生成しても永遠に
+            // forceされないため何も生成しない（空if-elseと同じ需要駆動の帰結）。
+            // ただしPrint等の未対応構成は明示エラーにする必要があるため、
+            // 本体を一度走査してから捨てる（代入が無いので束縛は生じない）。
+            const discarded: Binding[] = [];
+            processStmts(stmt.body, discarded, { topLevel: false, inLoop: true });
+            return;
+        }
+
+        const fnName = `%loop_${nextVersion('%loop')}`;
+
+        // 初回呼び出しの実引数 = ループ突入前の版（未代入なら版0＝⊥）。
+        const initArgs: FExpr[] = loopVars.map((v) => ({
+            kind: 'Var', id: nextId('var'), name: `${v}_${current[v] || 0}`,
+        }));
+
+        const saved = { ...current };
+
+        // 仮引数 = ループ先頭のφ（各周回の開始時点の値を受け取る新しい版）。
+        const paramNames = loopVars.map((v) => {
+            const ver = nextVersion(v);
+            current[v] = ver;
+            return `${v}_${ver}`;
+        });
+
+        // whileは本体実行前に判定するため、条件は仮引数の版を参照して構築する。
+        const condExpr = buildFExpr(stmt.cond);
+
+        // 本体（反復ごとに新しい環境で評価される式レベルの束縛列）。
+        const bodyBindings: Binding[] = [];
+        processStmts(stmt.body, bodyBindings, { topLevel: false, inLoop: true });
+
+        // 末尾自己呼び出しの実引数 = 本体末尾での各ループ変数の版。
+        const tailArgs: FExpr[] = loopVars.map((v) => ({
+            kind: 'Var', id: nextId('var'), name: `${v}_${current[v] || 0}`,
+        }));
+
+        // 出口値：条件不成立時点の値＝仮引数の版。ループ変数が1つなら単独で、
+        // 複数なら入れ子の対（Pair）で返す。
+        const paramVar = (i: number): FExpr => ({ kind: 'Var', id: nextId('var'), name: paramNames[i] });
+        let exitExpr: FExpr = paramVar(loopVars.length - 1);
+        for (let i = loopVars.length - 2; i >= 0; i--) {
+            exitExpr = { kind: 'Pair', id: nextId('pair'), fst: paramVar(i), snd: exitExpr };
+        }
+
+        // 本体束縛はthen腕の内側にLetInとして畳む（反復ごとに評価されるため
+        // プログラムレベルへ巻き上げられない）。
+        let thenBranch: FExpr = { kind: 'Apply', id: nextId('apply'), fn: fnName, args: tailArgs };
+        for (let i = bodyBindings.length - 1; i >= 0; i--) {
+            const b = bodyBindings[i];
+            if (b.kind !== 'plain') {
+                throw new Error('内部エラー: ループ本体に想定外の束縛種別が現れました');
+            }
+            thenBranch = { kind: 'LetIn', id: b.id, name: b.name, value: b.value, body: thenBranch };
+        }
+        const fnBody: FExpr = { kind: 'If', id: nextId('if'), cond: condExpr, then: thenBranch, else: exitExpr };
+
+        bindings.push({ kind: 'rec', id: canonicalVarId(fnName), name: fnName, params: paramNames, fnBody });
+
+        // 合流後（ループ脱出後）の新しい版を束縛する。複数ループ変数の場合は
+        // 適用結果 %r_n を一度だけlet束縛してから射影する（launchbury.md §1）。
+        current = { ...saved };
+        if (loopVars.length === 1) {
+            const v = loopVars[0];
+            const ver = nextVersion(v);
+            current[v] = ver;
+            const name = `${v}_${ver}`;
+            bindings.push({
+                kind: 'plain', id: canonicalVarId(name), name,
+                value: { kind: 'Apply', id: nextId('apply'), fn: fnName, args: initArgs },
+            });
+        } else {
+            const rName = `%r_${nextVersion('%r')}`;
+            bindings.push({
+                kind: 'plain', id: canonicalVarId(rName), name: rName,
+                value: { kind: 'Apply', id: nextId('apply'), fn: fnName, args: initArgs },
+            });
+            // 射影式は構文上複製されるが、force が到達するのは対の中の同一の
+            // 成分Thunkであるため、共有（§3.3）は保たれ再計算は起きない。
+            loopVars.forEach((v, i) => {
+                let proj: FExpr = { kind: 'Var', id: nextId('var'), name: rName };
+                for (let d = 0; d < i; d++) {
+                    proj = { kind: 'Proj', id: nextId('proj'), which: 'snd', pair: proj };
+                }
+                if (i < loopVars.length - 1) {
+                    proj = { kind: 'Proj', id: nextId('proj'), which: 'fst', pair: proj };
+                }
+                const ver = nextVersion(v);
+                current[v] = ver;
+                const name = `${v}_${ver}`;
+                bindings.push({ kind: 'plain', id: canonicalVarId(name), name, value: proj });
+            });
+        }
+    };
+
+    const processStmts = (stmts: ASTNode[], bindings: Binding[], ctx: Ctx): void => {
         stmts.forEach((stmt) => {
             if (stmt.type === 'Assign') {
                 // RHSを先に構築してからバージョンをインクリメントする。
@@ -161,33 +302,44 @@ export function transpileToFunctionalAst(ast: ASTNode[]): FProgram {
                 const ver = nextVersion(stmt.var);
                 current[stmt.var] = ver;
                 const name = `${stmt.var}_${ver}`;
-                bindings.push({ id: canonicalVarId(name), name, value: valueExpr });
+                bindings.push({ kind: 'plain', id: canonicalVarId(name), name, value: valueExpr });
                 return;
             }
             if (stmt.type === 'Print') {
-                if (!topLevel) {
+                if (!ctx.topLevel) {
                     throw new Error(
-                        'if-else分岐の内側に「表示」ブロックを置くことは現行スコープでは未対応です（表示ブロックは分岐の外に置いてください）'
+                        'if-else分岐やループの内側に「表示」ブロックを置くことは現行スコープでは未対応です（表示ブロックは外側に置いてください）'
                     );
                 }
                 // Print: 式を構築し、終端のDoへ集約するために収集するのみ。
                 prints.push({ kind: 'Print', id: nextId('print'), expr: buildFExpr(stmt.val) });
                 return;
             }
-            processIf(stmt, bindings);
+            if (stmt.type === 'While') {
+                if (ctx.inLoop) {
+                    throw new Error(
+                        'ループの入れ子（くり返しの中のくり返し）は現行スコープでは未対応です'
+                    );
+                }
+                processWhile(stmt, bindings);
+                return;
+            }
+            processIf(stmt, bindings, ctx);
         });
     };
 
     const bindings: Binding[] = [];
-    processStmts(ast, bindings, true);
+    processStmts(ast, bindings, { topLevel: true, inLoop: false });
 
-    // 束縛列を右結合の入れ子Letに畳み込み、終端のDoで閉じる。
+    // 束縛列を右結合の入れ子Let/LetRecに畳み込み、終端のDoで閉じる。
     // 平坦な束縛列と入れ子Letは等価（各Letのbodyが残り全体）であり、
     // 参照は常に「より外側（＝列の前方）のLet」だけに向かう。
     let program: FProgram = { kind: 'Do', id: nextId('do'), actions: prints };
     for (let i = bindings.length - 1; i >= 0; i--) {
         const b = bindings[i];
-        program = { kind: 'Let', id: b.id, name: b.name, value: b.value, body: program };
+        program = b.kind === 'rec'
+            ? { kind: 'LetRec', id: b.id, name: b.name, params: b.params, fnBody: b.fnBody, body: program }
+            : { kind: 'Let', id: b.id, name: b.name, value: b.value, body: program };
     }
     return program;
 }

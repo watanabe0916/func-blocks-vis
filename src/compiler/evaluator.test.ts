@@ -133,6 +133,78 @@ describe('evaluator: pure evaluate() over the functional AST', () => {
         expect(trace.some((ev) => ev.kind === 'force' && ev.nodeId === 'var_y_1')).toBe(true);
     });
 
+    it('§5.2: runs a while loop as a letrec (sum of 0..2), sharing the pair components across projections', () => {
+        // sum=0; i=0; while (i<3) { sum=sum+i; i=i+1 }; print sum; print i
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'sum', val: { type: 'Literal', value: 0 } },
+            { type: 'Assign', var: 'i', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 3 }] },
+                body: [
+                    { type: 'Assign', var: 'sum', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'sum' }, { type: 'Var', name: 'i' }] } },
+                    { type: 'Assign', var: 'i', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 1 }] } },
+                ],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'sum' } },
+            { type: 'Print', val: { type: 'Var', name: 'i' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { consoleOutput } = evaluate(program);
+        expect(consoleOutput).toEqual(['3', '3']);
+    });
+
+    it('§5.2: never runs a loop whose result is not demanded (demand-driven, §3.4)', () => {
+        // while (true) { x=x+1 }; print("hi")  — 結果xに需要が無いのでループは一度も走らず停止する
+        const ast: ASTNode[] = [
+            {
+                type: 'While',
+                cond: { type: 'Literal', value: true },
+                body: [{ type: 'Assign', var: 'x', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'x' }, { type: 'Literal', value: 1 }] } }],
+            },
+            { type: 'Print', val: { type: 'Literal', value: 'hi' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { trace, consoleOutput } = evaluate(program);
+        expect(consoleOutput).toEqual(['hi']);
+        // 適用（ループの起動）そのものが一度もforceされていないこと
+        expect(trace.some((ev) => ev.kind === 'force' && typeof ev.value === 'object')).toBe(false);
+    });
+
+    it('§5.2: reports a controlled error when the iteration cap is exceeded (launchbury.md §2.5)', () => {
+        // x=0; while (true) { x=x+1 }; print x
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'x', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Literal', value: true },
+                body: [{ type: 'Assign', var: 'x', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'x' }, { type: 'Literal', value: 1 }] } }],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'x' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { consoleOutput } = evaluate(program);
+        expect(consoleOutput).toHaveLength(1);
+        expect(consoleOutput[0]).toContain('エラー');
+        expect(consoleOutput[0]).toContain('上限');
+    });
+
+    it('§5.2: completes 300 iterations within the cap without stack overflow', () => {
+        // i=0; while (i<300) { i=i+1 }; print i
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'i', val: { type: 'Literal', value: 0 } },
+            {
+                type: 'While',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 300 }] },
+                body: [{ type: 'Assign', var: 'i', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'i' }, { type: 'Literal', value: 1 }] } }],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'i' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { consoleOutput } = evaluate(program);
+        expect(consoleOutput).toEqual(['300']);
+    });
+
     it('§5.1: does not crash when the unchosen branch contains an unbound variable (⊥ stays unforced)', () => {
         // if (true) { x=1 } else { x=z+1 }; print x  （zは未束縛）
         const ast: ASTNode[] = [

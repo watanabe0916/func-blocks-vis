@@ -1,6 +1,6 @@
 import { Node, Edge } from 'reactflow';
 import { Value, OP_SYMBOLS } from './types';
-import { FExpr, FProgram, FLet, PrimOp, canonicalUnboundId } from './functionalAst';
+import { FExpr, FProgram, PrimOp, canonicalVarId, canonicalUnboundId } from './functionalAst';
 import { TraceEvent } from './evaluator';
 
 /**
@@ -41,17 +41,60 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
         }
     });
 
+    // --- 束縛インデックス（§5.2でプログラムレベルのLet以外に、LetRecの
+    // 仮引数・関数名、式レベルのLetInが束縛の発生源に加わったため、事前に
+    // 全束縛を名前→{正準ノードid, 束縛式}で索引する）。Varはノードを生成せず、
+    // このインデックス経由で束縛元ノードへ解決される。 ---
+    const binderIndex = new Map<string, { id: string; value?: FExpr }>();
+    const indexExpr = (e: FExpr): void => {
+        switch (e.kind) {
+            case 'LetIn':
+                binderIndex.set(e.name, { id: e.id, value: e.value });
+                indexExpr(e.value);
+                indexExpr(e.body);
+                break;
+            case 'PrimApp':
+                e.args.forEach(indexExpr);
+                break;
+            case 'If':
+                indexExpr(e.cond);
+                indexExpr(e.then);
+                indexExpr(e.else);
+                break;
+            case 'Apply':
+                e.args.forEach(indexExpr);
+                break;
+            case 'Pair':
+                indexExpr(e.fst);
+                indexExpr(e.snd);
+                break;
+            case 'Proj':
+                indexExpr(e.pair);
+                break;
+            default:
+                break;
+        }
+    };
+    const indexProgram = (p: FProgram): void => {
+        if (p.kind === 'Let') {
+            binderIndex.set(p.name, { id: p.id, value: p.value });
+            indexExpr(p.value);
+            indexProgram(p.body);
+        } else if (p.kind === 'LetRec') {
+            binderIndex.set(p.name, { id: p.id });
+            // 仮引数＝ループ先頭のφ。値式を持たないため型は Unknown となる。
+            p.params.forEach((par) => binderIndex.set(par, { id: canonicalVarId(par) }));
+            indexExpr(p.fnBody);
+            indexProgram(p.body);
+        } else {
+            p.actions.forEach((a) => indexExpr(a.expr));
+        }
+    };
+    indexProgram(program);
+
     // --- 静的型推論（DateFlow.md原則3-1・CLAUDE.md §4.5）。
     // forceを一切誘発しないため、未評価（ゴースト）ノードへ向かうエッジにも
     // 型ラベルを付与できる。 ---
-    const findLetByName = (node: FProgram, name: string): FLet | null => {
-        if (node.kind === 'Let') {
-            if (node.name === name) return node;
-            return findLetByName(node.body, name);
-        }
-        return null;
-    };
-
     const inferType = (expr: FExpr): TypeLabel => {
         if (expr.kind === 'Lit') {
             if (typeof expr.value === 'number') return 'Number';
@@ -70,9 +113,17 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
             if (elseType === 'Unknown') return thenType;
             return thenType === elseType ? thenType : 'Unknown';
         }
+        if (expr.kind === 'LetIn') {
+            return inferType(expr.body);
+        }
+        if (expr.kind === 'Apply' || expr.kind === 'Pair' || expr.kind === 'Proj') {
+            // 関数適用・対・射影の返り値型は仮引数（値式を持たない）を経由する
+            // ため静的には確定しない。§5.4のラムダ導入時に型注釈と併せて拡張する。
+            return 'Unknown';
+        }
         // Var
-        const binding = findLetByName(program, expr.name);
-        return binding ? inferType(binding.value) : 'Unknown';
+        const binding = binderIndex.get(expr.name);
+        return binding?.value ? inferType(binding.value) : 'Unknown';
     };
 
     const setLiteralParent = (childId: string, parentId: string) => {
@@ -108,7 +159,7 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
         }
 
         if (expr.kind === 'Var') {
-            const binding = findLetByName(program, expr.name);
+            const binding = binderIndex.get(expr.name);
             if (binding) {
                 return { nodeId: binding.id, typeLabel };
             }
@@ -178,6 +229,147 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
                 });
             });
 
+            return { nodeId: expr.id, typeLabel };
+        }
+
+        if (expr.kind === 'LetIn') {
+            // 式レベルの束縛（ループ本体内のSSA束縛、§5.2）。let は透明であり、
+            // LetIn式のデータフロー上の出力は body の出力そのものである。
+            // 束縛変数ノードは値式の下に描き、評価状態は trace の最初の発生
+            // （＝初回反復）の値を表示する。
+            const valRes = place(expr.value, x - 60, y - 60, xSpan / 2);
+            if (!findNode(expr.id)) {
+                const evalInfo = forceIndex.get(expr.id);
+                nodes.push({
+                    id: expr.id,
+                    type: 'valNode',
+                    position: { x: x - 60, y },
+                    data: {
+                        label: expr.name,
+                        isVar: true,
+                        varName: expr.name.replace(/_\d+$/, ''),
+                        evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                        result: evalInfo?.value,
+                    },
+                });
+                edges.push({
+                    id: `e_${valRes.nodeId}_${expr.id}`,
+                    source: valRes.nodeId,
+                    target: expr.id,
+                    animated: false,
+                    label: valRes.typeLabel,
+                });
+            }
+            return place(expr.body, x + 140, y, xSpan);
+        }
+
+        if (expr.kind === 'Apply') {
+            // 関数適用は小さな四角の apply ノード（CLAUDE.md §4.5）。
+            // 関数定義（LetRecノード）からは破線のエッジを引き、静的定義と
+            // 動的適用を視覚的に区別する。末尾自己呼び出しの場合、このエッジは
+            // グラフ上のサイクルとなり、再帰そのものを表す。
+            const argCount = expr.args.length;
+            const step = argCount > 1 ? xSpan / (argCount - 1) : 0;
+            const argResults = expr.args.map((a, i) =>
+                place(a, x + (i - (argCount - 1) / 2) * step, y - 120, xSpan / Math.max(2, argCount))
+            );
+
+            const evalInfo = forceIndex.get(expr.id);
+            nodes.push({
+                id: expr.id,
+                type: 'applyNode',
+                position: { x, y },
+                data: {
+                    label: expr.fn.replace(/^%/, ''),
+                    fnName: expr.fn,
+                    evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                    result: evalInfo?.value,
+                },
+            });
+
+            argResults.forEach((r, i) => {
+                edges.push({
+                    id: `e_${r.nodeId}_${expr.id}_arg${i}`,
+                    source: r.nodeId,
+                    target: expr.id,
+                    animated: false,
+                    label: r.typeLabel,
+                });
+            });
+            const fnBinding = binderIndex.get(expr.fn);
+            if (fnBinding) {
+                edges.push({
+                    id: `e_${fnBinding.id}_${expr.id}_fn`,
+                    source: fnBinding.id,
+                    target: expr.id,
+                    targetHandle: 'fn',
+                    animated: false,
+                    style: { strokeDasharray: '6 4' },
+                });
+            }
+            return { nodeId: expr.id, typeLabel };
+        }
+
+        if (expr.kind === 'Pair') {
+            // 対のコンストラクタ（WHNF、§3.2）。二項演算と同じ矩形で描く。
+            const leftRes = place(expr.fst, x - xSpan / 2, y - 120, xSpan / 2);
+            const rightRes = place(expr.snd, x + xSpan / 2, y - 120, xSpan / 2);
+            const evalInfo = forceIndex.get(expr.id);
+            nodes.push({
+                id: expr.id,
+                type: 'opNode',
+                position: { x, y },
+                data: {
+                    op: 'Pair',
+                    label: '⟨ , ⟩',
+                    evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                    result: evalInfo?.value,
+                    folded: false,
+                    isElision: false,
+                    hasEmbeddedLiteral: false,
+                    args: {
+                        left: { id: leftRes.nodeId },
+                        right: { id: rightRes.nodeId },
+                    },
+                },
+            });
+            edges.push(
+                { id: `e_${leftRes.nodeId}_${expr.id}_left`, source: leftRes.nodeId, target: expr.id, targetHandle: 'left', animated: false, label: leftRes.typeLabel },
+                { id: `e_${rightRes.nodeId}_${expr.id}_right`, source: rightRes.nodeId, target: expr.id, targetHandle: 'right', animated: false, label: rightRes.typeLabel }
+            );
+            return { nodeId: expr.id, typeLabel };
+        }
+
+        if (expr.kind === 'Proj') {
+            // 射影（fst/snd）。単項演算と同じ形で描く。
+            const innerRes = place(expr.pair, x, y - 120, xSpan);
+            const evalInfo = forceIndex.get(expr.id);
+            nodes.push({
+                id: expr.id,
+                type: 'opNode',
+                position: { x, y },
+                data: {
+                    op: expr.which === 'fst' ? 'Fst' : 'Snd',
+                    label: expr.which,
+                    evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                    result: evalInfo?.value,
+                    folded: false,
+                    isElision: false,
+                    hasEmbeddedLiteral: false,
+                    args: {
+                        left: { id: innerRes.nodeId },
+                        right: null,
+                    },
+                },
+            });
+            edges.push({
+                id: `e_${innerRes.nodeId}_${expr.id}_left`,
+                source: innerRes.nodeId,
+                target: expr.id,
+                targetHandle: 'left',
+                animated: false,
+                label: innerRes.typeLabel,
+            });
             return { nodeId: expr.id, typeLabel };
         }
 
@@ -300,6 +492,59 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
             });
 
             statementIndex++;
+            walkProgram(node.body);
+            return;
+        }
+
+        if (node.kind === 'LetRec') {
+            // whileループの自己参照関数（§5.2）。仮引数（ループ先頭のφ）を
+            // 上段に並べ、関数本体のデータフローをその下に描き、末尾を
+            // 関数定義ノード（loopNode）へ束ねる。ループ不変変数（自由変数）
+            // への参照は binderIndex 経由で外側の束縛ノードへ自然に接続され、
+            // transform.md (c) / Weck & Tichy 原則4-2（自由変数捕捉エッジ）の
+            // 可視化がそのまま得られる。
+            const baseX = 50 + statementIndex * 300;
+
+            node.params.forEach((p, i) => {
+                const pid = canonicalVarId(p);
+                const evalInfo = forceIndex.get(pid);
+                nodes.push({
+                    id: pid,
+                    type: 'valNode',
+                    position: { x: baseX + i * 150, y: 30 },
+                    data: {
+                        label: p,
+                        isVar: true,
+                        isLoopParam: true,
+                        varName: p.replace(/_\d+$/, ''),
+                        evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                        result: evalInfo?.value,
+                    },
+                });
+            });
+
+            const res = place(node.fnBody, baseX + 150, 340, 240);
+
+            const evalInfo = forceIndex.get(node.id);
+            nodes.push({
+                id: node.id,
+                type: 'loopNode',
+                position: { x: baseX + 150, y: 470 },
+                data: {
+                    label: node.name.replace(/^%/, ''),
+                    params: node.params,
+                    evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                },
+            });
+            edges.push({
+                id: `e_${res.nodeId}_${node.id}`,
+                source: res.nodeId,
+                target: node.id,
+                animated: false,
+                label: res.typeLabel,
+            });
+
+            statementIndex += 2;
             walkProgram(node.body);
             return;
         }

@@ -2,7 +2,7 @@ import React from 'react';
 import ReactFlow, { Background, Controls, Handle, Position } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore } from '../store.ts';
-import { OP_SYMBOLS } from '../compiler/types';
+import { OP_SYMBOLS, showValue } from '../compiler/types';
 
 // 未評価（ゴースト）状態の共通スタイル。
 // 需要（demand）がまだ届いていないThunkを、構造は保ったまま減光して表示する。
@@ -84,7 +84,7 @@ const ValNode = ({ data, style, selected }: any) => {
                     {evaluated && !data.unbound && (
                         <>
                             <span style={{ opacity: 0.4 }}>=</span>
-                            <span style={{ fontSize: '11px', color: '#5d4037' }}>{String(val)}</span>
+                            <span style={{ fontSize: '11px', color: '#5d4037' }}>{showValue(val)}</span>
                         </>
                     )}
                 </div>
@@ -108,7 +108,8 @@ const OpNode = ({ id, data, selected }: any) => {
     const evaluated = data.evalState === 'evaluated';
     const isBoolResult = typeof data.result === 'boolean';
     const result = data.result;
-    const isUnary = data.op === 'Not';
+    // 単項（Not / fst / snd）は右入力を持たない
+    const isUnary = !data.args?.right;
     const unforcedInputs: string[] = data.unforcedInputs || [];
 
     // 結果に基づいて枠線・ヘッダーの色を変更（未評価の間はニュートラルなゴースト表示）
@@ -174,7 +175,7 @@ const OpNode = ({ id, data, selected }: any) => {
             fontWeight: 'bold',
             fontSize
         }}>
-            {String(result)}
+            {showValue(result)}
         </span>
     );
 
@@ -404,7 +405,7 @@ const IfNode = ({ data, selected }: any) => {
                                 fontWeight: 'bold',
                                 fontSize: '9px'
                             }}>
-                                {String(result)}
+                                {showValue(result)}
                             </span>
                         )}
                         {evaluated && skipped && (
@@ -417,6 +418,83 @@ const IfNode = ({ data, selected }: any) => {
             </div>
 
             {/* 下側に出力用のソースハンドル */}
+            <Handle type="source" position={Position.Bottom} style={{ background: borderColor }} />
+        </div>
+    );
+};
+
+// --- Custom Apply Node Component（動的な関数適用。小さな四角、CLAUDE.md §4.5） ---
+const ApplyNode = ({ data, selected }: any) => {
+    const evaluated = data.evalState === 'evaluated';
+    const borderColor = evaluated ? '#8e24aa' : GHOST_BORDER;
+
+    return (
+        <div style={{
+            padding: '2px 6px',
+            borderRadius: '3px',
+            background: evaluated ? '#f3e5f5' : '#fafafa',
+            color: '#4a148c',
+            border: `1.5px solid ${selected ? '#ff5722' : borderColor}`,
+            fontSize: '10px',
+            fontWeight: 'bold',
+            fontFamily: 'Inter, sans-serif',
+            boxShadow: selected ? '0 0 8px rgba(255, 87, 34, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
+            width: 'max-content',
+            whiteSpace: 'nowrap',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            minHeight: '18px',
+            opacity: evaluated ? 1 : GHOST_OPACITY,
+            transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s'
+        }}>
+            {/* 引数の入力（上・既定ハンドル）と関数定義からの破線エッジ用（左・fn） */}
+            <Handle type="target" position={Position.Top} style={{ background: borderColor }} />
+            <Handle type="target" position={Position.Left} id="fn" style={{ background: borderColor }} />
+            <span style={{ fontSize: '8px', opacity: 0.7, background: 'rgba(0,0,0,0.06)', padding: '1px 3px', borderRadius: '2px' }}>APPLY</span>
+            <span>↻ {data.label}</span>
+            {evaluated && data.result !== undefined && (
+                <span style={{ fontSize: '9px', padding: '1px 4px', borderRadius: '8px', background: '#ede7f6', color: '#4527a0' }}>
+                    {showValue(data.result)}
+                </span>
+            )}
+            <Handle type="source" position={Position.Bottom} style={{ background: borderColor }} />
+        </div>
+    );
+};
+
+// --- Custom Loop (letrec 自己参照関数) Node Component ---
+const LoopNode = ({ data, selected }: any) => {
+    const evaluated = data.evalState === 'evaluated';
+    const borderColor = evaluated ? '#8e24aa' : GHOST_BORDER;
+
+    return (
+        <div style={{
+            padding: '3px 10px',
+            borderRadius: '6px',
+            background: '#ffffff',
+            color: '#4a148c',
+            // 破線枠＝静的な関数定義（クロージャ）の視覚語彙（CLAUDE.md §4.5）
+            border: `1.5px dashed ${selected ? '#ff5722' : borderColor}`,
+            fontSize: '11px',
+            fontWeight: 'bold',
+            fontFamily: 'Inter, sans-serif',
+            boxShadow: selected ? '0 0 8px rgba(255, 87, 34, 0.5)' : '0 1px 3px rgba(0, 0, 0, 0.05)',
+            width: 'max-content',
+            whiteSpace: 'nowrap',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            minHeight: '20px',
+            opacity: evaluated ? 1 : GHOST_OPACITY,
+            transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s'
+        }}>
+            <Handle type="target" position={Position.Top} style={{ background: borderColor }} />
+            <span style={{ fontSize: '8px', opacity: 0.7, background: 'rgba(0,0,0,0.06)', padding: '1px 3px', borderRadius: '2px' }}>LETREC</span>
+            <span>ループ {data.label}</span>
+            <span style={{ fontSize: '8px', opacity: 0.6 }}>({(data.params || []).join(', ')})</span>
             <Handle type="source" position={Position.Bottom} style={{ background: borderColor }} />
         </div>
     );
@@ -465,6 +543,8 @@ const nodeTypes = {
     valNode: ValNode,
     opNode: OpNode,
     ifNode: IfNode,
+    applyNode: ApplyNode,
+    loopNode: LoopNode,
     printNode: PrintNode,
 };
 
