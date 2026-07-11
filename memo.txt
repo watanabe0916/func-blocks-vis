@@ -206,7 +206,19 @@ Boolean を扱う演算子群です。型制約が厳密に定義されていま
 ### 検証
 - ゴールデンテスト6件（haskellPrinter.test.ts、GHC不要）: Let/PrimApp/Doの脱糖形、⊥→undefined、if-elseφ、%condマングリング、whileのletrec＋タプル出口＋射影、非ASCII変数名のエスケープ。
 - ローカルGHC 9.14.1（brew）による実機確認: 代表5プログラム（算術/IEEE754/jsMod/文字列等価、短絡⊥（§7-5）、if-elseφ、sumループ、if内while）すべてで `ghc -fno-code` 型検査OK・`runghc` 出力がevaluate()と完全一致。短絡プログラムではHaskellの&&がundefinedを触らず"false"を返し、意味論対応がGHC側でも成立することを確認。
-- 残作業: Phase 2＝差分テストハーネスの自動化（`npm run test:ghc`。GHC不在環境ではスキップして通常のnpm run testを壊さない構成にする）、Phase 3＝GitHub Actions（haskell-actions/setup + setup-node）への組み込み。
+- 残作業: Phase 2＝差分テストハーネスの自動化（`npm run test:ghc`。GHC不在環境ではスキップして通常のnpm run testを壊さない構成にする）、Phase 3＝GitHub Actions（haskell-actions/setup + setup-node）への組み込み。→ いずれも下記の通り実装済み。
+
+## §4.6 GHC検証オラクル Phase 2/3（差分テストハーネスとCI）
+
+### Phase 2: 差分テストハーネス（src/compiler/ghcOracle.test.ts / `npm run test:ghc`）
+- 8つのfixture（手続型AST）それぞれに「①`ghc -fno-code` による独立型検査 → ②`runghc` 実行 → evaluate() の consoleOutput と標準出力の文字単位一致（観測等価、launchbury.md §3）」を検証する。
+- fixture: 算術/IEEE754の0除算/jsModの符号規約/文字列等価/累乗、論理演算（Not/Or）と文字列出力、短絡⊥（検証項目§7-5）、SSA複合代入とメモ化を跨ぐ複数print、if-elseφ＋%cond共有、sumループ（letrec・対・射影）、ループ不変変数の自由変数捕捉、if分岐内while＋需要駆動。
+- ゲート: 環境変数 `GHC_ORACLE=1` のときのみ実行（package.jsonの `test:ghc` スクリプトが設定）。通常の `npm run test` ではスイートごとスキップされ、GHC不在環境を壊さない。GHC_ORACLE=1 でも ghc/runghc が見つからない場合は警告してスキップ。
+- ローカルGHC 9.14.1 で8fixture全て型検査OK・出力完全一致を確認済み（実行時間 約10秒）。
+
+### Phase 3: GitHub Actions（.github/workflows/ci.yml）
+- push（main）/ PR 時に ubuntu-latest 上で `npm ci → build → lint → test → test:ghc` を実行する。GHCは haskell-actions/setup@v2（ghc-version 9.6）で導入。生成コードは base のみに依存するため、ローカル（9.14）とCIのGHCバージョン差は結果に影響しない。
+- これにより CLAUDE.md §4.6 の「GHCはCI専用検証オラクル・本番の実行系には一切組み込まない」という位置づけが構造的に完成した。ワークフローは初回push後にGitHub上で有効になる。
 
 ## 開発用コンソール出力のコンパクト整形（debugPrint.ts）
 - 「実行」時に console.log していたAST・評価トレースの生オブジェクト（DevToolsのCopy objectで全要素改行される冗長なJSON）を、`src/compiler/debugPrint.ts` の整形文字列に置き換えました。実行パイプラインの一部ではなくログ専用です。

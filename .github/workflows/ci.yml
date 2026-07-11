@@ -1,0 +1,39 @@
+# CI: ビルド・リンター・ユニットテストに加え、GHC検証オラクル（CLAUDE.md §4.6）
+# を実行する。GHCはここ（CI）でのみ使用し、本番の実行系には一切組み込まない。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # GHC検証オラクル用（型検査 ghc -fno-code / 差分テスト runghc）。
+      # 生成コードは base のみに依存するため、モダンなGHCならローカルと
+      # バージョンが厳密一致しなくても結果は変わらない。
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.6'
+
+      - run: npm ci
+
+      # 型チェック込みビルド（tsc && vite build）
+      - run: npm run build
+
+      - run: npm run lint
+
+      # ユニットテスト（GHC不要。オラクルスイートはスキップされる）
+      - run: npm run test
+
+      # GHC検証オラクル: 独立型検査＋観測等価の差分テスト（§4.6）
+      - run: npm run test:ghc

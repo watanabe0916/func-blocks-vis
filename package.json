@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ghc": "GHC_ORACLE=1 vitest run src/compiler/ghcOracle.test.ts"
   },
   "dependencies": {
     "blockly": "^12.5.1",

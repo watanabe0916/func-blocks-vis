@@ -5,6 +5,10 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    /* ghcOracle.test.ts 等が使う node:* モジュールと process のために
+       @types/node を明示的に取り込む（types はグローバル型の自動取り込み
+       のみに影響し、import経由の型解決には影響しない） */
+    "types": ["node"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",
