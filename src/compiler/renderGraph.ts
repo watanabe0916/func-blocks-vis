@@ -61,6 +61,15 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
         if (expr.kind === 'PrimApp') {
             return ARITH_OPS.has(expr.op) ? 'Number' : 'Boolean';
         }
+        if (expr.kind === 'If') {
+            // φ（三項演算子）の型は両腕の型の合流。片腕が未束縛（⊥）なら
+            // もう一方の型を採用する——⊥は全型に属する（§3.6）ため健全。
+            const thenType = inferType(expr.then);
+            const elseType = inferType(expr.else);
+            if (thenType === 'Unknown') return elseType;
+            if (elseType === 'Unknown') return thenType;
+            return thenType === elseType ? thenType : 'Unknown';
+        }
         // Var
         const binding = findLetByName(program, expr.name);
         return binding ? inferType(binding.value) : 'Unknown';
@@ -124,6 +133,52 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
                 });
             }
             return { nodeId: ghostId, typeLabel };
+        }
+
+        if (expr.kind === 'If') {
+            // 三項演算子（φ合流、§5.1）。cond/then/else の3入力を持つ専用
+            // ノードとして描く。選ばれなかった分岐の腕はtrace上にforce
+            // イベントを持たないため、既存のエッジ減光規則（source未評価→
+            // ゴースト破線）だけで「分岐のスキップ」が自動的に可視化される。
+            const condRes = place(expr.cond, x - xSpan / 2, y - 120, xSpan / 3);
+            const thenRes = place(expr.then, x, y - 120, xSpan / 3);
+            const elseRes = place(expr.else, x + xSpan / 2, y - 120, xSpan / 3);
+
+            const evalInfo = forceIndex.get(expr.id);
+            nodes.push({
+                id: expr.id,
+                type: 'ifNode',
+                position: { x, y },
+                data: {
+                    label: 'if',
+                    evalState: evalInfo ? 'evaluated' : 'unevaluated',
+                    result: evalInfo?.value,
+                    args: {
+                        cond: { id: condRes.nodeId },
+                        then: { id: thenRes.nodeId },
+                        else: { id: elseRes.nodeId },
+                    },
+                },
+            });
+
+            (
+                [
+                    ['cond', condRes],
+                    ['then', thenRes],
+                    ['else', elseRes],
+                ] as const
+            ).forEach(([handle, r]) => {
+                edges.push({
+                    id: `e_${r.nodeId}_${expr.id}_${handle}`,
+                    source: r.nodeId,
+                    target: expr.id,
+                    targetHandle: handle,
+                    animated: false,
+                    label: r.typeLabel,
+                });
+            });
+
+            return { nodeId: expr.id, typeLabel };
         }
 
         // PrimApp（算術・比較・論理演算は第一級関数適用として統一的に扱う）
@@ -209,7 +264,12 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
             const res = place(node.value, baseX, 300, 160);
 
             const bareName = node.name.replace(/_\d+$/, '');
-            if (varLatestId[bareName]) {
+            // トランスパイラが条件式の共有のために生成した合成束縛
+            // （%cond_n、§5.1）。ユーザー変数ではないため「最新版の
+            // ハイライト」の対象にせず、「条件」ノードとして描く。
+            const isCondBinding = bareName === '%cond';
+
+            if (!isCondBinding && varLatestId[bareName]) {
                 const prevNode = findNode(varLatestId[bareName]);
                 if (prevNode) prevNode.style = { ...prevNode.style, background: undefined };
             }
@@ -220,15 +280,16 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
                 type: 'valNode',
                 position: { x: baseX, y: 450 },
                 data: {
-                    label: node.name,
+                    label: isCondBinding ? '条件' : node.name,
                     isVar: true,
+                    isCondBinding,
                     varName: bareName,
                     evalState: evalInfo ? 'evaluated' : 'unevaluated',
                     result: evalInfo?.value,
                 },
-                style: { background: '#ffeb3b' },
+                style: isCondBinding ? undefined : { background: '#ffeb3b' },
             });
-            varLatestId[bareName] = node.id;
+            if (!isCondBinding) varLatestId[bareName] = node.id;
 
             edges.push({
                 id: `e_${res.nodeId}_${node.id}`,
@@ -277,6 +338,18 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
     // --- Finalize: 評価状態が確定した後で、折りたたみ（Elision）と
     // 「forceされなかった入力」バッジ、エッジの需要到達状況を決定する。 ---
     nodes.forEach((node) => {
+        if (node.type === 'ifNode') {
+            // 評価済みのifノードでは、条件の値から選ばれなかった側の分岐を
+            // 確定してバッジ表示に使う（traceの読み取りのみで判定する）。
+            const condInfo = forceIndex.get(node.data.args?.cond?.id);
+            node.data.skippedBranch =
+                node.data.evalState === 'evaluated' && condInfo
+                    ? condInfo.value
+                        ? 'else'
+                        : 'then'
+                    : null;
+            return;
+        }
         if (node.type !== 'opNode') return;
         const evaluated = node.data.evalState === 'evaluated';
         node.data.folded = evaluated && (node.data.isElision || node.data.hasEmbeddedLiteral);

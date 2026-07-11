@@ -24,6 +24,11 @@ const ValNode = ({ data, style, selected }: any) => {
         bg = '#fafafa';
         color = '#9e9e9e';
         borderColor = '#e0e0e0';
+    } else if (data.isCondBinding) {
+        // if-else の条件式を共有するための合成束縛（%cond、§5.1）
+        bg = '#f3e5f5';
+        color = '#6a1b9a';
+        borderColor = '#ce93d8';
     } else if (data.isVar) {
         // 変数はストアやトランスパイラから指定された背景色を優先
         bg = style?.background || '#fff9c4';
@@ -73,7 +78,7 @@ const ValNode = ({ data, style, selected }: any) => {
             {data.isVar ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{ fontSize: '8px', opacity: 0.6, background: 'rgba(0,0,0,0.05)', padding: '1px 3px', borderRadius: '2px' }}>
-                        {data.unbound ? 'UNBOUND' : 'VAR'}
+                        {data.unbound ? 'UNBOUND' : data.isCondBinding ? 'COND' : 'VAR'}
                     </span>
                     <span style={{ fontSize: '11px' }}>{data.label}</span>
                     {evaluated && !data.unbound && (
@@ -316,6 +321,107 @@ const OpNode = ({ id, data, selected }: any) => {
     );
 };
 
+// --- Custom If (三項演算子 / φ合流) Node Component ---
+const IfNode = ({ data, selected }: any) => {
+    const evaluated = data.evalState === 'evaluated';
+    const isBoolResult = typeof data.result === 'boolean';
+    const result = data.result;
+    const skipped = data.skippedBranch;
+
+    // 結果に基づいて枠線・ヘッダーの色を変更（未評価の間はニュートラルなゴースト表示）
+    let borderColor = '#90a4ae';
+    let headerBg = '#eceff1';
+    if (evaluated) {
+        if (isBoolResult) {
+            if (result === true) {
+                borderColor = '#4caf50';
+                headerBg = '#e8f5e9';
+            } else {
+                borderColor = '#f44336';
+                headerBg = '#ffebee';
+            }
+        } else {
+            borderColor = '#8e24aa';
+            headerBg = '#f3e5f5';
+        }
+    }
+
+    return (
+        <div style={{
+            borderRadius: '6px',
+            border: `1.5px solid ${selected ? '#ff5722' : (evaluated ? borderColor : GHOST_BORDER)}`,
+            background: '#ffffff',
+            boxShadow: selected ? '0 0 8px rgba(255, 87, 34, 0.5)' : '0 2px 4px rgba(0,0,0,0.06)',
+            fontSize: '11px',
+            fontFamily: 'Inter, sans-serif',
+            width: 'max-content',
+            minWidth: '90px',
+            overflow: 'hidden',
+            transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            opacity: evaluated ? 1 : GHOST_OPACITY
+        }}>
+            {/* 上側に3つの入力ハンドル：条件 / then腕 / else腕 */}
+            <Handle type="target" position={Position.Top} id="cond" style={{ left: '15%', background: borderColor }} />
+            <Handle type="target" position={Position.Top} id="then" style={{ left: '50%', background: borderColor }} />
+            <Handle type="target" position={Position.Top} id="else" style={{ left: '85%', background: borderColor }} />
+
+            <div style={{ whiteSpace: 'nowrap' }}>
+                <div style={{
+                    background: headerBg,
+                    padding: '2px 6px',
+                    borderBottom: '1px solid rgba(0,0,0,0.06)',
+                    fontWeight: 'bold',
+                    color: '#455a64',
+                    fontSize: '9px'
+                }}>
+                    分岐: if（φ合流）
+                </div>
+                <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '2px', minHeight: '36px' }}>
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        fontSize: '7px',
+                        fontWeight: 'bold',
+                        color: '#90a4ae',
+                        lineHeight: '1'
+                    }}>
+                        <span>条件</span>
+                        <span>then</span>
+                        <span>else</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#263238' }}>? :</div>
+                        {evaluated && (
+                            <span style={{
+                                padding: '1px 4px',
+                                borderRadius: '8px',
+                                background: isBoolResult ? (result === true ? '#e8f5e9' : '#ffebee') : '#f3e5f5',
+                                color: isBoolResult ? (result === true ? '#2e7d32' : '#c62828') : '#6a1b9a',
+                                fontWeight: 'bold',
+                                fontSize: '9px'
+                            }}>
+                                {String(result)}
+                            </span>
+                        )}
+                        {evaluated && skipped && (
+                            <div style={{ marginTop: '2px', fontSize: '8px', color: '#e65100', fontWeight: 'bold' }}>
+                                {skipped === 'then' ? 'then側スキップ' : 'else側スキップ'}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* 下側に出力用のソースハンドル */}
+            <Handle type="source" position={Position.Bottom} style={{ background: borderColor }} />
+        </div>
+    );
+};
+
 // --- Custom Print Node Component ---
 const PrintNode = ({ data, selected }: any) => {
     const hasError = !!data.error;
@@ -358,6 +464,7 @@ const PrintNode = ({ data, selected }: any) => {
 const nodeTypes = {
     valNode: ValNode,
     opNode: OpNode,
+    ifNode: IfNode,
     printNode: PrintNode,
 };
 

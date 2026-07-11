@@ -109,4 +109,43 @@ describe('evaluator: pure evaluate() over the functional AST', () => {
         expect(forceEvents[0]).toMatchObject({ memoHit: false });
         expect(forceEvents[1]).toMatchObject({ memoHit: true });
     });
+
+    it('§5.1: forces only the scrutinee and the chosen branch of an if-else', () => {
+        // x=1; if (x<5) { y=10 } else { y=20 }; print y
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'x', val: { type: 'Literal', value: 1 } },
+            {
+                type: 'If',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'x' }, { type: 'Literal', value: 5 }] },
+                then: [{ type: 'Assign', var: 'y', val: { type: 'Literal', value: 10 } }],
+                else: [{ type: 'Assign', var: 'y', val: { type: 'Literal', value: 20 } }],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'y' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { trace, consoleOutput } = evaluate(program);
+        expect(consoleOutput).toEqual(['10']);
+
+        // 選ばれなかったelse側の束縛（y_2、正準ID var_y_2）には需要が
+        // 届かず、trace上に一切のイベントが存在しないこと。
+        expect(trace.some((ev) => ev.nodeId === 'var_y_2')).toBe(false);
+        // 選ばれたthen側の束縛（y_1）はforceされていること。
+        expect(trace.some((ev) => ev.kind === 'force' && ev.nodeId === 'var_y_1')).toBe(true);
+    });
+
+    it('§5.1: does not crash when the unchosen branch contains an unbound variable (⊥ stays unforced)', () => {
+        // if (true) { x=1 } else { x=z+1 }; print x  （zは未束縛）
+        const ast: ASTNode[] = [
+            {
+                type: 'If',
+                cond: { type: 'Literal', value: true },
+                then: [{ type: 'Assign', var: 'x', val: { type: 'Literal', value: 1 } }],
+                else: [{ type: 'Assign', var: 'x', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'z' }, { type: 'Literal', value: 1 }] } }],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'x' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { consoleOutput } = evaluate(program);
+        expect(consoleOutput).toEqual(['1']);
+    });
 });

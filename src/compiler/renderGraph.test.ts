@@ -107,4 +107,76 @@ describe('renderGraph: pure trace-driven graph derivation', () => {
         expect(nodes.length).toBeLessThan(10);
         expect(edges.length).toBeLessThan(10);
     });
+
+    it('§5.1: renders an ifNode with three typed edges and marks the skipped branch as ghost', () => {
+        // x=1; if (x<5) { y=10 } else { y=20 }; print y
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'x', val: { type: 'Literal', value: 1 } },
+            {
+                type: 'If',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'x' }, { type: 'Literal', value: 5 }] },
+                then: [{ type: 'Assign', var: 'y', val: { type: 'Literal', value: 10 } }],
+                else: [{ type: 'Assign', var: 'y', val: { type: 'Literal', value: 20 } }],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'y' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { trace } = evaluate(program);
+        const { nodes, edges } = renderGraph(program, trace);
+
+        const ifNode = nodes.find((n) => n.type === 'ifNode');
+        expect(ifNode).toBeDefined();
+        expect(ifNode?.data.evalState).toBe('evaluated');
+        expect(ifNode?.data.result).toBe(10);
+        // 条件が true だったので else 側がスキップされたと判定される
+        expect(ifNode?.data.skippedBranch).toBe('else');
+
+        // cond/then/else の3本のエッジがあり、すべて型ラベルを持つ
+        const inEdges = edges.filter((e) => e.target === ifNode!.id);
+        expect(inEdges).toHaveLength(3);
+        expect(inEdges.map((e) => e.targetHandle).sort()).toEqual(['cond', 'else', 'then']);
+        inEdges.forEach((e) => {
+            expect(['Number', 'String', 'Boolean', 'Unknown']).toContain(e.label);
+        });
+
+        // 選ばれなかったelse側の束縛ノード（y_2）は未評価ゴーストのまま残る
+        const elseArm = nodes.find((n) => n.id === 'var_y_2');
+        expect(elseArm?.data.evalState).toBe('unevaluated');
+        // 選ばれたthen側の束縛ノード（y_1）は評価済み
+        const thenArm = nodes.find((n) => n.id === 'var_y_1');
+        expect(thenArm?.data.evalState).toBe('evaluated');
+    });
+
+    it('§5.1: renders a shared %cond binding as a single 条件 node feeding every φ', () => {
+        // a=1; if (a<5) { x=1; y=2 } else { x=3 }; print x; print y
+        const ast: ASTNode[] = [
+            { type: 'Assign', var: 'a', val: { type: 'Literal', value: 1 } },
+            {
+                type: 'If',
+                cond: { type: 'Apply', op: 'LessThan', args: [{ type: 'Var', name: 'a' }, { type: 'Literal', value: 5 }] },
+                then: [
+                    { type: 'Assign', var: 'x', val: { type: 'Literal', value: 1 } },
+                    { type: 'Assign', var: 'y', val: { type: 'Literal', value: 2 } },
+                ],
+                else: [{ type: 'Assign', var: 'x', val: { type: 'Literal', value: 3 } }],
+            },
+            { type: 'Print', val: { type: 'Var', name: 'x' } },
+            { type: 'Print', val: { type: 'Var', name: 'y' } },
+        ];
+        const program = transpileToFunctionalAst(ast);
+        const { trace } = evaluate(program);
+        const { nodes, edges } = renderGraph(program, trace);
+
+        // 条件ノードは1つだけ（条件式の複製をしていない）
+        const condNodes = nodes.filter((n) => n.data.isCondBinding);
+        expect(condNodes).toHaveLength(1);
+
+        // その条件ノードから両方のifノードへエッジが伸びている
+        const ifNodes = nodes.filter((n) => n.type === 'ifNode');
+        expect(ifNodes).toHaveLength(2);
+        ifNodes.forEach((ifNode) => {
+            const condEdge = edges.find((e) => e.target === ifNode.id && e.targetHandle === 'cond');
+            expect(condEdge?.source).toBe(condNodes[0].id);
+        });
+    });
 });

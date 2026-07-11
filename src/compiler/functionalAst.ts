@@ -23,7 +23,14 @@ export type FVar = { kind: 'Var'; id: string; name: string };
 
 export type FPrimApp = { kind: 'PrimApp'; id: string; op: PrimOp; args: FExpr[] };
 
-export type FExpr = FLit | FVar | FPrimApp;
+// 三項演算子 `cond ? then : else`（§5.1）。手続型if-else文のSSA合流点
+// （φ関数）は、このノードの返り値そのものが担う（diamond型の値合流に
+// 限る。ループ先頭のφは§5.2のletrec仮引数が担い、本ノードでは表現
+// しない）。評価器はscrutinee（cond）のみWHNFまでforceし、選ばれ
+// なかった分岐Thunkには需要が届かない。
+export type FIf = { kind: 'If'; id: string; cond: FExpr; then: FExpr; else: FExpr };
+
+export type FExpr = FLit | FVar | FPrimApp | FIf;
 
 // SSA代入に対応する束縛（`let x_n = e in ...` というネストした direct style。
 // CLAUDE.md §2の評価戦略と一致）。

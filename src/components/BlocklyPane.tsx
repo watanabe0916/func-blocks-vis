@@ -59,6 +59,34 @@ Blockly.defineBlocksWithJsonArray([
     "tooltip": "変数の値を計算して更新します（複合代入）",
     "helpUrl": ""
   },
+  // controls_if_ext: if-else文（§5.1）。手続型のメンタルモデル（分岐して代入）
+  // のまま組み立てさせ、裏側でSSA合流点＝三項演算子（φ）へ変換する。
+  // 現行スコープでは分岐内に置けるのは代入系ブロック（と入れ子のif-else）のみ
+  // （分岐内のPrintは変換時に明示エラーとなる）。
+  {
+    "type": "controls_if_ext",
+    "message0": "もし %1 ならば %2 そうでなければ %3",
+    "args0": [
+        {
+            "type": "input_value",
+            "name": "COND",
+            "check": "Boolean"
+        },
+        {
+            "type": "input_statement",
+            "name": "THEN"
+        },
+        {
+            "type": "input_statement",
+            "name": "ELSE"
+        }
+    ],
+    "previousStatement": null,
+    "nextStatement": null,
+    "colour": 210,
+    "tooltip": "条件が true なら「ならば」の中身、false なら「そうでなければ」の中身が採用されます（内部では三項演算子へ変換され、選ばれなかった側は評価されません）",
+    "helpUrl": ""
+  },
   // logic_boolean_ext
   {
     "type": "logic_boolean_ext",
@@ -239,6 +267,14 @@ const toolbox = {
         },
         {
             kind: 'category',
+            name: '制御',
+            colour: 210,
+            contents: [
+                { kind: 'block', type: 'controls_if_ext' }
+            ]
+        },
+        {
+            kind: 'category',
             name: 'テキスト出力',
             colour: 160,
             contents: [
@@ -285,18 +321,25 @@ export default function BlocklyPane() {
         const ast = extractAST(workspace.current);
         console.log('--- ① Procedural AST ---', ast);
 
-        // ②関数型ASTへの変換
-        const program = transpileToFunctionalAst(ast);
-        console.log('--- ② Functional AST ---', program);
+        try {
+            // ②関数型ASTへの変換
+            const program = transpileToFunctionalAst(ast);
+            console.log('--- ② Functional AST ---', program);
 
-        // ③純粋評価器による実行（→trace）
-        const { trace, consoleOutput } = evaluate(program);
-        console.log('--- ③ Evaluation Trace / Console Output ---', trace, consoleOutput);
+            // ③純粋評価器による実行（→trace）
+            const { trace, consoleOutput } = evaluate(program);
+            console.log('--- ③ Evaluation Trace / Console Output ---', trace, consoleOutput);
 
-        // ⑤トレース駆動グラフ描画（④の結果表示はconsoleOutputをそのままstoreへ）
-        const { nodes, edges } = renderGraph(program, trace);
+            // ⑤トレース駆動グラフ描画（④の結果表示はconsoleOutputをそのままstoreへ）
+            const { nodes, edges } = renderGraph(program, trace);
 
-        updateGraph(nodes, edges, consoleOutput);
+            updateGraph(nodes, edges, consoleOutput);
+        } catch (e) {
+            // 現行スコープ外の構成（例: if-else分岐内のPrint）は変換段階で
+            // 明示エラーになる。仮想コンソールへ理由を表示する。
+            const message = e instanceof Error ? e.message : String(e);
+            updateGraph([], [], [`[変換エラー] ${message}`]);
+        }
     };
 
     const handleSave = () => {

@@ -12,18 +12,28 @@ export function extractAST(workspace: Blockly.Workspace | null): ASTNode[] {
     const ast: ASTNode[] = [];
 
     topBlocks.forEach((block) => {
-        let currentBlock: Blockly.Block | null = block;
-        while (currentBlock) {
-            const stmt = blockToAST(currentBlock);
-            if (stmt) {
-                ast.push(stmt);
-            }
-            // 次に接続されているブロックへ移動
-            currentBlock = currentBlock.getNextBlock();
-        }
+        ast.push(...stmtChainToAST(block));
     });
 
     return ast;
+}
+
+/**
+ * ブロックの連結（next接続の連鎖）を文の列として抽出する。
+ * if-else の分岐本体（input_statement）にも同じ規則を再帰的に適用する。
+ */
+function stmtChainToAST(block: Blockly.Block | null): ASTNode[] {
+    const stmts: ASTNode[] = [];
+    let currentBlock: Blockly.Block | null = block;
+    while (currentBlock) {
+        const stmt = blockToAST(currentBlock);
+        if (stmt) {
+            stmts.push(stmt);
+        }
+        // 次に接続されているブロックへ移動
+        currentBlock = currentBlock.getNextBlock();
+    }
+    return stmts;
 }
 
 /**
@@ -42,6 +52,14 @@ function blockToAST(block: Blockly.Block): ASTNode | null {
             return {
                 type: 'Print',
                 val: exprToAST(block.getInputTargetBlock('TEXT'))
+            };
+
+        case 'controls_if_ext': // if-else文（§5.1。関数型ASTでは三項演算子へ変換される）
+            return {
+                type: 'If',
+                cond: exprToAST(block.getInputTargetBlock('COND')),
+                then: stmtChainToAST(block.getInputTargetBlock('THEN')),
+                else: stmtChainToAST(block.getInputTargetBlock('ELSE')),
             };
 
         case 'math_change_ext': { // 新しい複合代入ブロック

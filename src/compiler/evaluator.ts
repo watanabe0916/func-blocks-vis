@@ -14,6 +14,9 @@ import { FExpr, FProgram, PrimOp, canonicalUnboundId } from './functionalAst';
  *   PrimApp ↔ PRIMOP拡張規則（固定の組込演算子への適用。本システムは
  *             ユーザー定義ラムダを持たないため、汎用APP規則ではなく
  *             このPRIMOP拡張のみで足りる＝現行スコープの単純化）
+ *   If      ↔ CASE規則のBool特殊化（scrutineeのみWHNFまで評価し、
+ *             選ばれた分岐の式の評価に移る。§5.1）
+ *             ↔ Haskellの脱糖 `if c then a else b = case c of {True->a; False->b}`
  *   Do      ↔ トップレベル評価の起点（需要の根、§3.4）
  *             ↔ Haskellの `do{e;stmts} = e >> do{stmts}`
  * この対応が低コストで成立するのは、ユーザー定義ラムダ・自己参照letrecが
@@ -123,6 +126,22 @@ export function evaluate(program: FProgram): EvalResult {
                 unboundGhosts.set(ghostId, thunk);
             }
             return thunk;
+        }
+        if (expr.kind === 'If') {
+            // §5.1: scrutinee（条件）のみをWHNFまでforceし、選ばれた分岐
+            // だけをforceする。選ばれなかった分岐のThunkには需要が届かず
+            // 未評価のまま残る。And/Or（§3.5）と同様、if-then-elseにも
+            // 特殊な簡約規則は不要で、非正格性は遅延評価から創発する。
+            const condThunk = buildThunk(expr.cond, env);
+            const thenThunk = buildThunk(expr.then, env);
+            const elseThunk = buildThunk(expr.else, env);
+            return {
+                nodeId: expr.id,
+                cell: {
+                    state: 'unevaluated',
+                    compute: () => (force(condThunk) ? force(thenThunk) : force(elseThunk)),
+                },
+            };
         }
         // PrimApp: 引数Thunkは一度だけ構築する（forceのたびに再構築しない）。
         const argThunks = expr.args.map((a) => buildThunk(a, env));
