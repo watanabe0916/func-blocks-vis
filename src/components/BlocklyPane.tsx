@@ -6,14 +6,16 @@ import { transpileToFunctionalAst } from '../compiler/transpiler.ts';
 import { evaluate } from '../compiler/evaluator.ts';
 import { renderGraph } from '../compiler/renderGraph.ts';
 import { extractAST } from '../compiler/extractor.ts';
+import { runProcedural, ProcResult } from '../compiler/procInterpreter.ts';
 import { showProceduralAst, showFunctionalAst, showTrace } from '../compiler/debugPrint.ts';
+import ConsolePanel from './ConsolePanel.tsx';
 
 Blockly.setLocale(Ja as any);
 
 // 標準の算術演算ブロックに剰余 (%) を追加する
 if (Blockly.Blocks['math_arithmetic']) {
     const originalInit = Blockly.Blocks['math_arithmetic'].init;
-    Blockly.Blocks['math_arithmetic'].init = function(this: Blockly.Block) {
+    Blockly.Blocks['math_arithmetic'].init = function (this: Blockly.Block) {
         originalInit.call(this);
         const opField = this.getField('OP');
         if (opField && 'menuGenerator_' in opField) {
@@ -27,196 +29,196 @@ if (Blockly.Blocks['math_arithmetic']) {
 
 // 複合代入ブロック
 Blockly.defineBlocksWithJsonArray([
-  {
-    "type": "math_change_ext",
-    "message0": "%1 %2 %3",
-    "args0": [
-        {
-            "type": "field_variable",
-            "name": "VAR",
-            "variable": "x"
-        },
-        {
-            "type": "field_dropdown",
-            "name": "OP",
-            "options": [
-                ["+=", "ADD"],
-                ["-=", "MINUS"],
-                ["*=", "MULTIPLY"],
-                ["/=", "DIVIDE"],
-                ["^=", "POWER"],
-                ["%=", "MODULO"]
-            ]
-        },
-        {
-            "type": "input_value",
-            "name": "DELTA",
-            "check": "Number"
-        }
-    ],
-    "previousStatement": null,
-    "nextStatement": null,
-    "colour": 230,
-    "tooltip": "変数の値を計算して更新します（複合代入）",
-    "helpUrl": ""
-  },
-  // controls_if_ext: if-else文（§5.1）。手続型のメンタルモデル（分岐して代入）
-  // のまま組み立てさせ、裏側でSSA合流点＝三項演算子（φ）へ変換する。
-  // 現行スコープでは分岐内に置けるのは代入系ブロック（と入れ子のif-else）のみ
-  // （分岐内のPrintは変換時に明示エラーとなる）。
-  {
-    "type": "controls_if_ext",
-    "message0": "もし %1 ならば %2 そうでなければ %3",
-    "args0": [
-        {
-            "type": "input_value",
-            "name": "COND",
-            "check": "Boolean"
-        },
-        {
-            "type": "input_statement",
-            "name": "THEN"
-        },
-        {
-            "type": "input_statement",
-            "name": "ELSE"
-        }
-    ],
-    "previousStatement": null,
-    "nextStatement": null,
-    "colour": 210,
-    "tooltip": "条件が true なら「ならば」の中身、false なら「そうでなければ」の中身が採用されます（内部では三項演算子へ変換され、選ばれなかった側は評価されません）",
-    "helpUrl": ""
-  },
-  // controls_while_ext: while文（§5.2）。手続型のメンタルモデル（条件を満たす間
-  // くり返して代入）のまま組み立てさせ、裏側で letrec の自己参照関数へ変換する。
-  // ループ内で再代入される変数は関数の仮引数（＝ループ先頭のφ）、再代入されない
-  // 変数は自由変数として閉包に捕捉される（transform.md §1）。
-  // 現行スコープではループ内のPrint・ループの入れ子は変換時に明示エラーとなる。
-  {
-    "type": "controls_while_ext",
-    "message0": "%1 のあいだ %2 をくり返す",
-    "args0": [
-        {
-            "type": "input_value",
-            "name": "COND",
-            "check": "Boolean"
-        },
-        {
-            "type": "input_statement",
-            "name": "DO"
-        }
-    ],
-    "previousStatement": null,
-    "nextStatement": null,
-    "colour": 210,
-    "tooltip": "条件が true のあいだ中身をくり返します（内部では自己参照関数（letrec）の末尾呼び出しへ変換されます）",
-    "helpUrl": ""
-  },
-  // logic_boolean_ext
-  {
-    "type": "logic_boolean_ext",
-    "message0": "%1",
-    "args0": [
-        {
-            "type": "field_dropdown",
-            "name": "BOOL",
-            "options": [
-                ["true", "TRUE"],
-                ["false", "FALSE"]
-            ]
-        }
-    ],
-    "output": "Boolean",
-    "colour": 280,
-    "tooltip": "真偽値リテラル（true または false）を返します。",
-    "helpUrl": ""
-  },
-  // logic_compare_ext
-  {
-    "type": "logic_compare_ext",
-    "message0": "%1 %2 %3",
-    "args0": [
-        {
-            "type": "input_value",
-            "name": "A",
-            "check": ["Number", "String"]
-        },
-        {
-            "type": "field_dropdown",
-            "name": "OP",
-            "options": [
-                ["=", "EQ"],
-                ["\u2260", "NEQ"],
-                ["<", "LT"],
-                ["\u2264", "LTE"],
-                [">", "GT"],
-                ["\u2265", "GTE"]
-            ]
-        },
-        {
-            "type": "input_value",
-            "name": "B",
-            "check": ["Number", "String"]
-        }
-    ],
-    "output": "Boolean",
-    "inputsInline": true,
-    "colour": 280,
-    "tooltip": "2つの値（数値または文字列）を比較します。",
-    "helpUrl": ""
-  },
-  // logic_operation_ext
-  {
-    "type": "logic_operation_ext",
-    "message0": "%1 %2 %3",
-    "args0": [
-        {
-            "type": "input_value",
-            "name": "A",
-            "check": "Boolean"
-        },
-        {
-            "type": "field_dropdown",
-            "name": "OP",
-            "options": [
-                ["AND", "AND"],
-                ["OR", "OR"]
-            ]
-        },
-        {
-            "type": "input_value",
-            "name": "B",
-            "check": "Boolean"
-        }
-    ],
-    "output": "Boolean",
-    "inputsInline": true,
-    "colour": 280,
-    "tooltip": "論理積(AND)または論理和(OR)を計算します。",
-    "helpUrl": ""
-  },
-  // logic_negate_ext
-  {
-    "type": "logic_negate_ext",
-    "message0": "NOT %1",
-    "args0": [
-        {
-            "type": "input_value",
-            "name": "BOOL",
-            "check": "Boolean"
-        }
-    ],
-    "output": "Boolean",
-    "colour": 280,
-    "tooltip": "真偽値を反転させます。",
-    "helpUrl": ""
-  }
+    {
+        "type": "math_change_ext",
+        "message0": "%1 %2 %3",
+        "args0": [
+            {
+                "type": "field_variable",
+                "name": "VAR",
+                "variable": "x"
+            },
+            {
+                "type": "field_dropdown",
+                "name": "OP",
+                "options": [
+                    ["+=", "ADD"],
+                    ["-=", "MINUS"],
+                    ["*=", "MULTIPLY"],
+                    ["/=", "DIVIDE"],
+                    ["^=", "POWER"],
+                    ["%=", "MODULO"]
+                ]
+            },
+            {
+                "type": "input_value",
+                "name": "DELTA",
+                "check": "Number"
+            }
+        ],
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": 230,
+        "tooltip": "変数の値を計算して更新します（複合代入）",
+        "helpUrl": ""
+    },
+    // controls_if_ext: if-else文（§5.1）。手続型のメンタルモデル（分岐して代入）
+    // のまま組み立てさせ、裏側でSSA合流点＝三項演算子（φ）へ変換する。
+    // 現行スコープでは分岐内に置けるのは代入系ブロック（と入れ子のif-else）のみ
+    // （分岐内のPrintは変換時に明示エラーとなる）。
+    {
+        "type": "controls_if_ext",
+        "message0": "もし %1 ならば %2 そうでなければ %3",
+        "args0": [
+            {
+                "type": "input_value",
+                "name": "COND",
+                "check": "Boolean"
+            },
+            {
+                "type": "input_statement",
+                "name": "THEN"
+            },
+            {
+                "type": "input_statement",
+                "name": "ELSE"
+            }
+        ],
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": 210,
+        "tooltip": "条件が true なら「ならば」の中身、false なら「そうでなければ」の中身が採用されます（内部では三項演算子へ変換され、選ばれなかった側は評価されません）",
+        "helpUrl": ""
+    },
+    // controls_while_ext: while文（§5.2）。手続型のメンタルモデル（条件を満たす間
+    // くり返して代入）のまま組み立てさせ、裏側で letrec の自己参照関数へ変換する。
+    // ループ内で再代入される変数は関数の仮引数（＝ループ先頭のφ）、再代入されない
+    // 変数は自由変数として閉包に捕捉される（transform.md §1）。
+    // 現行スコープではループ内のPrint・ループの入れ子は変換時に明示エラーとなる。
+    {
+        "type": "controls_while_ext",
+        "message0": "%1 のあいだ %2 をくり返す",
+        "args0": [
+            {
+                "type": "input_value",
+                "name": "COND",
+                "check": "Boolean"
+            },
+            {
+                "type": "input_statement",
+                "name": "DO"
+            }
+        ],
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": 210,
+        "tooltip": "条件が true のあいだ中身をくり返します（内部では自己参照関数（letrec）の末尾呼び出しへ変換されます）",
+        "helpUrl": ""
+    },
+    // logic_boolean_ext
+    {
+        "type": "logic_boolean_ext",
+        "message0": "%1",
+        "args0": [
+            {
+                "type": "field_dropdown",
+                "name": "BOOL",
+                "options": [
+                    ["true", "TRUE"],
+                    ["false", "FALSE"]
+                ]
+            }
+        ],
+        "output": "Boolean",
+        "colour": 280,
+        "tooltip": "真偽値リテラル（true または false）を返します。",
+        "helpUrl": ""
+    },
+    // logic_compare_ext
+    {
+        "type": "logic_compare_ext",
+        "message0": "%1 %2 %3",
+        "args0": [
+            {
+                "type": "input_value",
+                "name": "A",
+                "check": ["Number", "String"]
+            },
+            {
+                "type": "field_dropdown",
+                "name": "OP",
+                "options": [
+                    ["=", "EQ"],
+                    ["\u2260", "NEQ"],
+                    ["<", "LT"],
+                    ["\u2264", "LTE"],
+                    [">", "GT"],
+                    ["\u2265", "GTE"]
+                ]
+            },
+            {
+                "type": "input_value",
+                "name": "B",
+                "check": ["Number", "String"]
+            }
+        ],
+        "output": "Boolean",
+        "inputsInline": true,
+        "colour": 280,
+        "tooltip": "2つの値（数値または文字列）を比較します。",
+        "helpUrl": ""
+    },
+    // logic_operation_ext
+    {
+        "type": "logic_operation_ext",
+        "message0": "%1 %2 %3",
+        "args0": [
+            {
+                "type": "input_value",
+                "name": "A",
+                "check": "Boolean"
+            },
+            {
+                "type": "field_dropdown",
+                "name": "OP",
+                "options": [
+                    ["AND", "AND"],
+                    ["OR", "OR"]
+                ]
+            },
+            {
+                "type": "input_value",
+                "name": "B",
+                "check": "Boolean"
+            }
+        ],
+        "output": "Boolean",
+        "inputsInline": true,
+        "colour": 280,
+        "tooltip": "論理積(AND)または論理和(OR)を計算します。",
+        "helpUrl": ""
+    },
+    // logic_negate_ext
+    {
+        "type": "logic_negate_ext",
+        "message0": "NOT %1",
+        "args0": [
+            {
+                "type": "input_value",
+                "name": "BOOL",
+                "check": "Boolean"
+            }
+        ],
+        "output": "Boolean",
+        "colour": 280,
+        "tooltip": "真偽値を反転させます。",
+        "helpUrl": ""
+    }
 ]);
 
 // 比較ブロックの型一致バリデーションフック
 if (Blockly.Blocks['logic_compare_ext']) {
-    Blockly.Blocks['logic_compare_ext'].onchange = function(this: Blockly.Block, e: any) {
+    Blockly.Blocks['logic_compare_ext'].onchange = function (this: Blockly.Block, e: any) {
         if (!this.workspace || (this.workspace as any).isDragging()) return;
         const inputA = this.getInput('A');
         const inputB = this.getInput('B');
@@ -318,6 +320,8 @@ export default function BlocklyPane() {
     const updateGraph = useStore((state) => state.updateGraph);
     const { saveLayout, deleteLayout, savedLayouts } = useStore();
     const [selectedLayout, setSelectedLayout] = useState('');
+    // 手続型としての実行結果（左ペイン下部に表示。CLAUDE.md §4.8）
+    const [procResult, setProcResult] = useState<ProcResult | null>(null);
 
     useEffect(() => {
         if (!workspace.current && blocklyDiv.current) {
@@ -340,6 +344,16 @@ export default function BlocklyPane() {
                 return items.filter((item: any) => !(item.kind === 'block' && item.type === 'math_change'));
             });
         }
+
+        // コンソールのリサイズ等でワークスペース領域の大きさが変わったとき、
+        // Blockly側の描画領域を追従させる（Blocklyはwindowのresizeしか見ない）。
+        if (blocklyDiv.current) {
+            const observer = new ResizeObserver(() => {
+                if (workspace.current) Blockly.svgResize(workspace.current);
+            });
+            observer.observe(blocklyDiv.current);
+            return () => observer.disconnect();
+        }
     }, []);
 
     const handleRun = () => {
@@ -347,6 +361,12 @@ export default function BlocklyPane() {
         // ①手続型AST抽出（ログは節目のみ改行するコンパクト整形。debugPrint.ts）
         const ast = extractAST(workspace.current);
         console.log(`--- ① Procedural AST ---\n${showProceduralAst(ast)}`);
+
+        // 手続型参照インタプリタによる正格・逐次実行（§4.8）。変換とは独立に
+        // 常に実行・表示する。無限ループは反復上限で打ち切られ、途中までの
+        // 出力と「打ち切り」ステータスが表示される——関数型側（右ペイン）が
+        // 需要駆動で停止するのと並べて見せるための比較対象。
+        setProcResult(runProcedural(ast));
 
         try {
             // ②関数型ASTへの変換
@@ -419,7 +439,7 @@ export default function BlocklyPane() {
                 <button onClick={handleRun} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#4caf50', color: 'white', border: 'none', borderRadius: '4px' }}>
                     関数型に変換して実行
                 </button>
-                
+
                 <div style={{ borderLeft: '1px solid #ccc', height: '24px', margin: '0 5px' }} />
 
                 <button onClick={handleSave} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#2196f3', color: 'white', border: 'none', borderRadius: '4px' }}>
@@ -427,8 +447,8 @@ export default function BlocklyPane() {
                 </button>
 
                 <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                    <select 
-                        value={selectedLayout} 
+                    <select
+                        value={selectedLayout}
                         onChange={(e) => setSelectedLayout(e.target.value)}
                         style={{ padding: '7px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '120px' }}
                     >
@@ -445,7 +465,20 @@ export default function BlocklyPane() {
                     </button>
                 </div>
             </div>
-            <div ref={blocklyDiv} style={{ flex: 1, width: '100%' }} />
+            <div ref={blocklyDiv} style={{ flex: 1, minHeight: 0, width: '100%' }} />
+
+            {/* 手続型としての実行結果（正格・逐次実行、§4.8）。
+                右ペインの仮想コンソール（関数型実行、App.tsx）と同一の見た目で
+                並べ、実行のたびに両コンソールへ結果が出る比較構成にする。
+                上端の仕切りバーで左右それぞれ独立に任意の高さへリサイズできる */}
+            <ConsolePanel title="実行結果（手続型）">
+                {procResult && procResult.output.map((line, i) => (
+                    <div key={i}>{`> ${line}`}</div>
+                ))}
+                {procResult?.message && (
+                    <div>{`> [${procResult.status === 'timeout' ? '打ち切り' : 'エラー'}] ${procResult.message}`}</div>
+                )}
+            </ConsolePanel>
         </div>
     );
 }

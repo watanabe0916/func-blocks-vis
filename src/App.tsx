@@ -1,5 +1,6 @@
 import BlocklyPane from './components/BlocklyPane.tsx';
 import FlowPane from './components/FlowPane.tsx';
+import ConsolePanel from './components/ConsolePanel.tsx';
 import { useStore } from './store.ts';
 
 export default function App() {
@@ -9,13 +10,12 @@ export default function App() {
         <BlocklyPane />
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 3 }}>
+        <div style={{ flex: 1, minHeight: 0 }}>
           <FlowPane />
         </div>
-        <div style={{ flex: 1, backgroundColor: '#1e1e1e', color: '#fff', padding: '10px', overflowY: 'auto', fontFamily: 'monospace' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '14px', borderBottom: '1px solid #555', paddingBottom: '5px' }}>実行結果</h3>
+        <ConsolePanel title="実行結果（関数型）">
           <ConsolePane />
-        </div>
+        </ConsolePanel>
       </div>
     </div>
   );
