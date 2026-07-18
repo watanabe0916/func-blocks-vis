@@ -88,7 +88,7 @@ describe('transpiler well-formedness (transform.md §2, [S]-style invariant)', (
     });
 });
 
-describe('§5.1 if-else → 三項演算子（φ = If ノードの返り値）', () => {
+describe('§5.1 if-else → 条件式If（φ = If ノードの返り値）', () => {
     it('merges a diamond reassignment through a φ binding referencing both branch versions', () => {
         // x=1; if (x<5) { x=10 } else { x=20 }; print x
         const ast: ASTNode[] = [

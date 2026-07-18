@@ -23,7 +23,8 @@ export type FVar = { kind: 'Var'; id: string; name: string };
 
 export type FPrimApp = { kind: 'PrimApp'; id: string; op: PrimOp; args: FExpr[] };
 
-// 三項演算子 `cond ? then : else`（§5.1）。手続型if-else文のSSA合流点
+// 条件式 `if cond then a else b`（§5.1。Haskellのif式に対応する「値を返す
+// 条件式」）。手続型if-else文のSSA合流点
 // （φ関数）は、このノードの返り値そのものが担う（diamond型の値合流に
 // 限る。ループ先頭のφは§5.2のletrec仮引数が担い、本ノードでは表現
 // しない）。評価器はscrutinee（cond）のみWHNFまでforceし、選ばれ

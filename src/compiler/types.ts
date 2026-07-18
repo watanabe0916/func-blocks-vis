@@ -13,7 +13,7 @@ export type PrintNode = {
     val: ExpressionNode;
 };
 
-// if-else文（§5.1）。関数型AST上の三項演算子（Ifノード）へ変換され、
+// if-else文（§5.1）。関数型AST上の条件式（Ifノード）へ変換され、
 // SSA合流点のφ関数はその返り値が担う（diamond型の値合流）。
 // 分岐本体は文の列（入れ子のif-elseも可）。else無しは空配列で表す。
 export type IfNode = {

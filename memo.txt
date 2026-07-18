@@ -250,3 +250,14 @@ Boolean を扱う演算子群です。型制約が厳密に定義されていま
 - コンソール出力（④）は従来どおり配列のまま別行でログします。
 
 
+
+## 条件分岐の用語統一（三項演算子 → 条件式/if式）と Appel 引用の精密化
+- 「三項演算子ではなくHaskell流のif式に実装し直すべきか」という設計検討の結論: **実装の作り直しは不要**。関数型AST上の条件分岐は最初から `If` ノード（kind:'If'、cond/then/else）であり、`?:` という構文はどこにも実装されていない（本システムはテキストコードを実行しないため構文記号は評価対象にならない）。Haskellの `if c then a else b` とTypeScriptの `c ? a : b` は「値を返す条件式」として意味論的に同一物で、差異は綴りのみ。haskellPrinter は従来から `if-then-else` を出力し、グラフノードのラベルも従来から「分岐: if（φ合流）」だった。
+- 修正はすべて用語・記述・表示レベルのみ（動作変更ゼロ）:
+  - CLAUDE.md §2/§4.2/§5.1: 「三項演算子」→「条件式（if式）」に統一（§5.1冒頭に `?:` が同一意味論のTypeScript綴りである旨の参照を1箇所だけ残す）。
+  - CLAUDE.md §5.1: Appel "SSA is Functional Programming" の引用を精密化。Appelが示すφの**一般形は「関数の仮引数」への対応**であり、条件式（Ifノード）の返り値による表現は**if-else値合流（diamond型）に限る特殊ケース**である（従来の「φ=三項演算子（Appelの対応）」は不正確な要約だった。設計自体は正しく、引用の帰属のみ修正）。
+  - CLAUDE.md §2: ANF（A-Normal Form, Flanagan et al.）用語を導入。ただし本システムの変換は**完全なANFではない**（文レベルの束縛は行うが式内部の中間値は束縛しない。共有が必要な `%cond`・`%r` に限りLaunchburyの正規化「適用の引数は変数」に従う）ことを実装事実どおりに明記。
+  - CLAUDE.md §5.1(c): Ifを「条件式」と呼ぶことに伴い、scrutineeの意味の「条件式」を「条件（scrutinee）」に改め多義性を解消。
+  - コード側: コメント・テスト名の「三項演算子」を「条件式（Ifノード）」へ統一（transpiler.ts / renderGraph.ts / extractor.ts / functionalAst.ts / types.ts / FlowPane.tsx / BlocklyPane.tsx / transpiler.test.ts / ghcOracle.test.ts）。学習者可視の唯一の箇所である controls_if_ext のツールチップを「内部では値を返す if 式へ変換され」に変更（「ifが値を返す」ことこそ関数型の核心的な気づきであり、これを記号 `?:` の中に隠さないため）。
+  - transform.md は変更しない（「φ=三項演算子という要約を精密化する」という文書自体の文脈が壊れるため。内容は正しい）。
+- 検証: build/lint/test 全合格（46件、動作変更がないため既存テストはそのまま通る）。src配下に「三項」表記の残存なし。

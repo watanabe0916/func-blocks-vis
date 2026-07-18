@@ -322,7 +322,7 @@ const OpNode = ({ id, data, selected }: any) => {
     );
 };
 
-// --- Custom If (三項演算子 / φ合流) Node Component ---
+// --- Custom If (条件式 / φ合流) Node Component ---
 const IfNode = ({ data, selected }: any) => {
     const evaluated = data.evalState === 'evaluated';
     const isBoolResult = typeof data.result === 'boolean';

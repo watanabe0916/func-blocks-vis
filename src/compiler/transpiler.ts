@@ -15,9 +15,9 @@ import { FExpr, FProgram, FPrint, canonicalVarId } from './functionalAst';
  *
  * if-else文（§5.1）の変換規則:
  * - 分岐内で代入された各変数 v に対し、合流点でφ束縛
- *   `let v_new = If(cond, v_then版, v_else版)` を生成する。SSAのφ関数は
- *   三項演算子の返り値そのものが担う（diamond型の値合流。
- *   Appel "SSA is Functional Programming" の対応）。
+ *   `let v_new = If(cond, v_then版, v_else版)` を生成する。diamond型の
+ *   値合流のφは条件式（Ifノード）の返り値が担う（Appel "SSA is Functional
+ *   Programming" が示すφの一般形＝関数の仮引数の、if-else値合流に限る特殊ケース）。
  * - 分岐内の束縛は合流点より前へ「巻き上げ」て平坦なLet連鎖に並べる。
  *   call-by-need では束縛＝評価ではない（LaunchburyのLET規則はヒープへの
  *   割り当てのみ）ため、選ばれなかった分岐の束縛には需要が届かず未評価の
@@ -35,7 +35,7 @@ import { FExpr, FProgram, FPrint, canonicalVarId } from './functionalAst';
  * - (b) ループ内で再代入される変数はその関数の仮引数とする。初回呼び出しの
  *   実引数はループ突入前の版、末尾自己呼び出しの実引数は各周回での更新後の
  *   版——これが「ループ先頭のφ = 仮引数」（[K]§4・[M]§8.1・[S]の一致した知見。
- *   §5.1のdiamond型φ＝三項演算子とは異なり、ループ先頭のφは三項演算子では
+ *   §5.1のdiamond型φ＝条件式（Ifノード）とは異なり、ループ先頭のφは条件式では
  *   表現できない）。
  * - (c) ループ内で再代入されないループ不変変数は仮引数にせず、外側スコープの
  *   自由変数として閉包に捕捉させる（[M]§3の貢献。エッジ数の線形性にも寄与）。

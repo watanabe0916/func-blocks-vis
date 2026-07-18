@@ -63,7 +63,7 @@ Blockly.defineBlocksWithJsonArray([
         "helpUrl": ""
     },
     // controls_if_ext: if-else文（§5.1）。手続型のメンタルモデル（分岐して代入）
-    // のまま組み立てさせ、裏側でSSA合流点＝三項演算子（φ）へ変換する。
+    // のまま組み立てさせ、裏側でSSA合流点＝条件式Ifノード（φ）へ変換する。
     // 現行スコープでは分岐内に置けるのは代入系ブロック（と入れ子のif-else）のみ
     // （分岐内のPrintは変換時に明示エラーとなる）。
     {
@@ -87,7 +87,7 @@ Blockly.defineBlocksWithJsonArray([
         "previousStatement": null,
         "nextStatement": null,
         "colour": 210,
-        "tooltip": "条件が true なら「ならば」の中身、false なら「そうでなければ」の中身が採用されます（内部では三項演算子へ変換され、選ばれなかった側は評価されません）",
+        "tooltip": "条件が true なら「ならば」の中身、false なら「そうでなければ」の中身が採用されます（内部では値を返す if 式へ変換され、選ばれなかった側は評価されません）",
         "helpUrl": ""
     },
     // controls_while_ext: while文（§5.2）。手続型のメンタルモデル（条件を満たす間

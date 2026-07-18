@@ -85,7 +85,7 @@ const FIXTURES: Record<string, ASTNode[]> = {
         { type: 'Print', val: { type: 'Var', name: 'y' } },
         { type: 'Print', val: { type: 'Apply', op: 'Add', args: [{ type: 'Var', name: 'x' }, { type: 'Var', name: 'y' }] } },
     ],
-    // §5.1 if-else（φ＝三項演算子）、%cond共有つき
+    // §5.1 if-else（φ＝条件式Ifの返り値）、%cond共有つき
     ifelse: [
         { type: 'Assign', var: 'a', val: { type: 'Literal', value: 1 } },
         {

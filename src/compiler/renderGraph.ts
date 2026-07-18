@@ -105,7 +105,7 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
             return ARITH_OPS.has(expr.op) ? 'Number' : 'Boolean';
         }
         if (expr.kind === 'If') {
-            // φ（三項演算子）の型は両腕の型の合流。片腕が未束縛（⊥）なら
+            // φ（条件式Ifノード）の型は両腕の型の合流。片腕が未束縛（⊥）なら
             // もう一方の型を採用する——⊥は全型に属する（§3.6）ため健全。
             const thenType = inferType(expr.then);
             const elseType = inferType(expr.else);
@@ -187,7 +187,7 @@ export function renderGraph(program: FProgram, trace: TraceEvent[]): { nodes: No
         }
 
         if (expr.kind === 'If') {
-            // 三項演算子（φ合流、§5.1）。cond/then/else の3入力を持つ専用
+            // 条件式If（φ合流、§5.1）。cond/then/else の3入力を持つ専用
             // ノードとして描く。選ばれなかった分岐の腕はtrace上にforce
             // イベントを持たないため、既存のエッジ減光規則（source未評価→
             // ゴースト破線）だけで「分岐のスキップ」が自動的に可視化される。

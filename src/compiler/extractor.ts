@@ -61,7 +61,7 @@ function blockToAST(block: Blockly.Block): ASTNode | null {
                 body: stmtChainToAST(block.getInputTargetBlock('DO')),
             };
 
-        case 'controls_if_ext': // if-else文（§5.1。関数型ASTでは三項演算子へ変換される）
+        case 'controls_if_ext': // if-else文（§5.1。関数型ASTでは条件式（Ifノード）へ変換される）
             return {
                 type: 'If',
                 cond: exprToAST(block.getInputTargetBlock('COND')),
