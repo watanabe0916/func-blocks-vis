@@ -113,7 +113,7 @@ React Flow・Zustandに一切依存しない、単独でシリアライズ可能
 - `Pair` / `Proj`: 対（consセルの最小形）とその射影（§5.2実装済み。複数ループ変数の出口値を表現する。forceはWHNFまで＝§3.2の最初の具体化であり§5.3の無限リストの準備）
 - `Do`: `Print` 文の列（IOアクションの逐次実行に対応する需要の根）
 
-§5.4（高階関数）を実装する際は、`Lambda`（第一級の関数値）と汎用の `Apply`（部分適用を含むユーザー関数適用）をノード種別として追加・一般化する。追加のたびに、(a) extractor.ts のマッピング規則、(b) evaluator.ts の評価規則、(c) FlowPane.tsx の描画規則（§4.5 の apply ノード／部分グラフ視覚規則に従う）、(d) haskellPrinter.ts の脱糖規則（§4.6）、(e) §4.7 の対応関係論証（`launchbury.md`）、を機械的に追加する。
+§5.4（高階関数）を実装する際は、`Lambda`（第一級の関数値）と汎用の `Apply`（部分適用を含むユーザー関数適用）をノード種別として追加・一般化する。追加のたびに、(a) extractor.ts のマッピング規則、(b) evaluator.ts の評価規則、(c) renderGraph.ts のノード生成規則と FlowPane.tsx のノード外観（§4.5 の apply ノード／部分グラフ視覚規則に従う）、(d) haskellPrinter.ts の脱糖規則（§4.6）、(e) §4.7 の対応関係論証（`launchbury.md`）、を機械的に追加する。
 
 ### 4.3 純粋評価器 `src/compiler/evaluator.ts`（新設）
 - `evaluate(program: FunctionalAST): { trace: TraceEvent[], consoleOutput: string[] }` という **UIに一切依存しない純粋関数** として実装する。
@@ -124,7 +124,7 @@ React Flow・Zustandに一切依存しない、単独でシリアライズ可能
 - 役割を「①手続型AST → ②関数型ASTへの変換」のみに縮小する。評価ロジック（`force`/`BUILTINS` 等）は一切持たず `evaluator.ts` へ委譲する。
 - SSAバージョニング（変数再代入時の新環境生成）は本ステージの責務のまま維持する（`Let` ノードの生成規則として表現する）。
 
-### 4.5 トレース駆動グラフ描画 `src/compiler/renderGraph.ts`（呼び出し元: `src/components/FlowPane.tsx` / `src/store.ts`）
+### 4.5 トレース駆動グラフ描画 `src/compiler/renderGraph.ts`（呼び出し元: `src/components/BlocklyPane.tsx`。結果は `src/store.ts` 経由で `src/components/FlowPane.tsx` が描画する）
 視覚語彙は Weck & Tichy, "Visualizing Data-Flows in Functional Programs" のデータフロー図設計原則を採用する（抽出・採否の全根拠・原論文の図解は `DateFlow.md` を参照。同論文の変換経路＝λ計算→圏論表現→unificationは、本システムの「評価器トレースから直接グラフを導出する」設計（§4.5冒頭）と競合するため不採用。ノード種別・エッジ・型注釈・部分グラフ等の**視覚表現層のみ**を流用する）。
 
 - `renderGraph(ast: FunctionalAST, trace: TraceEvent[]): { nodes, edges }` という **評価を一切行わない純粋関数** として `src/compiler/renderGraph.ts` に実装する（状態管理から独立させ、単体テスト容易性を確保するため `store.ts` には混在させない）。
@@ -225,7 +225,7 @@ React Flow・Zustandに一切依存しない、単独でシリアライズ可能
 4. **UI 堅牢性:** 演算ノードの詳細/簡易切替でエッジ再計算（レイアウト）が破綻しない。
 5. **短絡＝遅延の創発確認:** `false AND (未定義変数 y > 0)` 実行時、右辺 Thunk に **need が届かず force されない**ことを確認する。右辺ノードは**未評価（ゴースト）のまま**留まり、全体が `false` に簡約され、未定義変数エラーでクラッシュしないこと。
 6. **遅延と WHNF/メモ化:** 無限リスト（`iterate` 相当）から `take 3` を実行し、(a) 全体が停止すること、(b) 消費されていない tail ノードが未評価のまま残ること、(c) 同一 Thunk が再計算されず1回だけ評価される（メモ化）ことを確認。
-7. **【追加】パイプライン分離の健全性確認:** `evaluate()` が返す `trace` のみから `renderGraph()` がグラフを再構築できること（評価処理中のライブなノード変異に一切依存していないこと）をユニットテストで確認する。`transpiler.ts`（②）・`evaluator.ts`（③）・`FlowPane.tsx`（⑤）がそれぞれ単体でテスト可能であることを確認する。
+7. **【追加】パイプライン分離の健全性確認:** `evaluate()` が返す `trace` のみから `renderGraph()` がグラフを再構築できること（評価処理中のライブなノード変異に一切依存していないこと）をユニットテストで確認する。`transpiler.ts`（②）・`evaluator.ts`（③）・`renderGraph.ts`（⑤）がそれぞれ単体でテスト可能であることを確認する。
 8. **【追加】視覚設計原則の適用確認（§4.5 / `DateFlow.md`）:** 全エッジに型ラベル（Number/String/Boolean）が表示されること、レイアウトが上→下の流れで描画されること、ノード種別（関数/演算＝矩形、値・変数＝丸、start/sink＝黒矢印）が視覚的に区別されること。
 
 ---
